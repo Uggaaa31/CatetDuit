@@ -2,35 +2,48 @@
 
 const CATEGORY_KEYWORDS = {
   'Makanan & Minuman': [
-    'makan', 'minum', 'kopi', 'coffee', 'cafe', 'resto', 'warung makan', 'warteg',
-    'nasi', 'mie', 'bakso', 'sate', 'ayam', 'snack', 'jajan', 'sarapan',
-    'lunch', 'dinner', 'grabfood', 'gofood', 'shopeefood', 'es teh', 'boba'
+    'makan', 'minum', 'sarapan', 'lunch', 'dinner', 'nasi', 'mie', 'bakso', 'sate',
+    'ayam', 'snack', 'jajan', 'grabfood', 'gofood', 'shopeefood', 'es teh', 'boba',
+    'warteg', 'padang', 'kantin', 'catering'
   ],
   'Rokok & Vape': [
     'rokok', 'vape', 'vapor', 'liquid', 'pod', 'coil', 'cartridge',
     'surya', 'marlboro', 'sampoerna', 'magnum', 'gudang garam', 'esse',
     'camel', 'djarum', 'juul', 'relx', 'iqos', 'kretek', 'filter', 'tembakau'
   ],
-  'Transportasi': [
+  'Nongkrong & Hiburan': [
+    'nongkrong', 'ngopi', 'kopi', 'coffee', 'cafe', 'kafe', 'bioskop', 'cinema',
+    'xxi', 'spotify', 'netflix', 'youtube', 'game', 'topup', 'diamond', 'steam',
+    'jalan-jalan', 'liburan', 'karaoke', 'billiard'
+  ],
+  'Bensin & Transportasi': [
     'bensin', 'pertalite', 'pertamax', 'solar', 'parkir', 'ojol', 'gojek',
     'grab', 'goride', 'gocar', 'maxim', 'krl', 'mrt', 'lrt', 'busway',
-    'angkot', 'tol', 'cuci motor', 'cuci mobil', 'tambal ban', 'servis'
+    'angkot', 'tol', 'cuci motor', 'cuci mobil', 'tambal ban', 'servis', 'oli'
   ],
-  'Tagihan & Utilitas': [
-    'pulsa', 'kuota', 'paket data', 'wifi', 'indihome', 'biznet', 'pln',
-    'listrik', 'token', 'pdam', 'air', 'bpjs', 'iuran', 'kost', 'kontrakan',
-    'sewa'
+  'Kuota & Internet': [
+    'kuota', 'paket data', 'paket internet', 'pulsa', 'telkomsel', 'by.u',
+    'indosat', 'xl', 'tri', 'smartfren'
   ],
-  'Kebutuhan Harian': [
-    'indomaret', 'alfamart', 'supermarket', 'pasar', 'belanja', 'sabun',
-    'odol', 'shampoo', 'deterjen', 'beras', 'minyak', 'telur', 'sayur'
+  'Listrik, Air & Wifi': [
+    'listrik', 'token pln', 'pln', 'air', 'pdam', 'wifi', 'indihome', 'biznet',
+    'firstmedia', 'myrepublic', 'iuran sampah', 'sewa kost', 'kost', 'kontrakan'
   ],
-  'Hiburan': [
-    'nonton', 'bioskop', 'cinema', 'xxi', 'spotify', 'netflix', 'youtube',
-    'game', 'topup', 'diamond', 'steam', 'jalan-jalan', 'liburan'
+  'Belanja Bulanan': [
+    'belanja bulanan', 'indomaret', 'alfamart', 'supermarket', 'pasar',
+    'sabun', 'odol', 'shampoo', 'deterjen', 'beras', 'minyak', 'telur',
+    'bumbu', 'pewangi', 'pasta gigi'
   ],
-  'Kesehatan': [
-    'obat', 'apotek', 'dokter', 'vitamin', 'klinik', 'puskesmas', 'rumah sakit'
+  'Kirim Keluarga': [
+    'kirim ortu', 'kirim ibu', 'kirim bapak', 'kirim keluarga', 'transfer ortu',
+    'transfer keluarga', 'uang jajan adik', 'sedekah', 'infaq', 'zakat'
+  ],
+  'Dana Darurat': [
+    'dana darurat', 'darurat', 'biaya berobat mendadak', 'bengkel darurat'
+  ],
+  'Tabungan': [
+    'tabungan', 'nabung', 'simpanan', 'deposito', 'reksadana', 'saham',
+    'investasi', 'beli emas', 'logam mulia', 'bibit', 'bareksa'
   ],
   'Pemasukan': [
     'gaji', 'bonus', 'freelance', 'proyek', 'omset', 'arisan', 'dividen',
@@ -100,6 +113,21 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'help' };
   }
 
+  if (lower === 'budget' || lower === 'cek budget' || lower === 'anggaran') {
+    return { isCommand: true, action: 'budget' };
+  }
+
+  // Format: set budget [kategori] [nominal]
+  // Contoh: set budget bensin 250rb
+  const setBudgetMatch = text.match(/^(?:set\s+budget|atur\s+budget|set\s+anggaran)\s+([A-Za-z0-9\s,&]+)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)$/i);
+  if (setBudgetMatch) {
+    const targetCat = setBudgetMatch[1].trim();
+    const amountVal = parseNominal(setBudgetMatch[2]);
+    if (amountVal && amountVal > 0) {
+      return { isCommand: true, action: 'set_budget', categoryInput: targetCat, amount: amountVal };
+    }
+  }
+
   if (lower === 'rekap' || lower.startsWith('rekap')) {
     let period = 'today';
     if (lower.includes('bulan') || lower.includes('monthly')) period = 'month';
@@ -136,7 +164,6 @@ function parseMessage(rawText) {
   }
 
   // Regex mencari token nominal di dalam string
-  // Mencocokkan: 50rb, 50k, 2.5jt, 50.000, 50000, dll.
   const nominalRegex = /(?:rp\.?\s*)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)/gi;
 
   let match;
@@ -225,4 +252,5 @@ module.exports = {
   parseMessage,
   parseNominal,
   detectCategory,
+  CATEGORY_KEYWORDS,
 };
