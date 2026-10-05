@@ -6,13 +6,12 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from PIL import Image, ImageOps
-import pytesseract
 import google.generativeai as genai
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr-service")
 
-app = FastAPI(title="OCR & Receipt Extraction Service")
+app = FastAPI(title="AI Receipt Extraction Service")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
@@ -20,7 +19,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     logger.info("Gemini AI Vision terkonfigurasi untuk OCR struk.")
 else:
-    logger.warning("GEMINI_API_KEY tidak disetel. Akan menggunakan Tesseract OCR lokal sebagai fallback.")
+    logger.warning("GEMINI_API_KEY belum disetel pada file .env.")
 
 class ReceiptItem(BaseModel):
     name: str
@@ -34,7 +33,7 @@ class OCRResponse(BaseModel):
     merchantName: Optional[str] = "Toko / Merchant"
     totalAmount: float
     date: Optional[str] = None
-    category: Optional[str] = "Kebutuhan Harian"
+    category: Optional[str] = "Belanja Bulanan"
     items: List[ReceiptItem] = []
     engine: str = "gemini"
 
@@ -51,7 +50,7 @@ def extract_with_gemini(image_path: str) -> dict:
       "merchantName": "nama toko atau merchant (contoh: Indomaret, Alfamart, KFC, TOP MODE, dsb)",
       "totalAmount": 45000,
       "date": "DD/MM/YYYY",
-      "category": "Makanan & Minuman | Rokok & Vape | Kebutuhan Harian | Transportasi | Tagihan & Utilitas | Hiburan | Lain-lain",
+      "category": "Makanan & Minuman | Rokok & Vape | Belanja Bulanan | Bensin & Transportasi | Tagihan & Utilitas | Nongkrong & Hiburan | Lain-lain",
       "items": [
         {"name": "nama item", "price": 15000, "qty": 1}
       ]
@@ -77,7 +76,6 @@ def extract_with_gemini(image_path: str) -> dict:
 
             data = json.loads(clean_json)
 
-            # Normalisasi items key (qty vs quantity)
             normalized_items = []
             for item in data.get("items", []):
                 qty = item.get("qty") or item.get("quantity") or 1
@@ -96,42 +94,6 @@ def extract_with_gemini(image_path: str) -> dict:
     raise last_err or Exception("Semua model Gemini gagal merespons.")
 
 
-def extract_with_tesseract(image_path: str) -> dict:
-    img = Image.open(image_path)
-    img = ImageOps.exif_transpose(img)
-
-    text = pytesseract.image_to_string(img, lang="ind+eng")
-    logger.info("Tesseract Raw Text: %s", text[:200])
-
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    merchant_name = lines[0] if lines else "Struk Belanja"
-
-    total_amount = 0.0
-    for line in lines:
-        lower_line = line.lower()
-        if any(k in lower_line for k in ["total", "jumlah", "bayar", "grand total"]):
-            numbers = re.findall(r"(?:rp\.?\s*)?([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+)", line, re.IGNORECASE)
-            if numbers:
-                last_num = numbers[-1].replace(".", "").replace(",", "")
-                try:
-                    total_amount = float(last_num)
-                    break
-                except ValueError:
-                    pass
-
-    date_match = re.search(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b", text)
-    date_val = date_match.group(1) if date_match else None
-
-    return {
-        "merchantName": merchant_name,
-        "totalAmount": total_amount,
-        "date": date_val,
-        "category": "Kebutuhan Harian",
-        "items": [],
-        "engine": "tesseract"
-    }
-
-
 @app.get("/health")
 def health_check():
     return {
@@ -145,30 +107,19 @@ def extract_receipt(payload: OCRRequest):
     if not os.path.exists(payload.imageFilePath):
         raise HTTPException(status_code=404, detail=f"File gambar tidak ditemukan: {payload.imageFilePath}")
 
-    if GEMINI_API_KEY:
-        try:
-            result = extract_with_gemini(payload.imageFilePath)
-            return OCRResponse(
-                merchantName=result.get("merchantName", "Struk Belanja"),
-                totalAmount=float(result.get("totalAmount", 0)),
-                date=result.get("date"),
-                category=result.get("category", "Kebutuhan Harian"),
-                items=[ReceiptItem(**i) for i in result.get("items", [])],
-                engine="gemini"
-            )
-        except Exception as e:
-            logger.error("Gagal ekstrak dengan Gemini, mencoba fallback ke Tesseract: %s", e)
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY belum disetel pada file .env.")
 
     try:
-        tess_result = extract_with_tesseract(payload.imageFilePath)
+        result = extract_with_gemini(payload.imageFilePath)
         return OCRResponse(
-            merchantName=tess_result.get("merchantName"),
-            totalAmount=float(tess_result.get("totalAmount", 0)),
-            date=tess_result.get("date"),
-            category=tess_result.get("category"),
-            items=[],
-            engine="tesseract"
+            merchantName=result.get("merchantName", "Struk Belanja"),
+            totalAmount=float(result.get("totalAmount", 0)),
+            date=result.get("date"),
+            category=result.get("category", "Belanja Bulanan"),
+            items=[ReceiptItem(**i) for i in result.get("items", [])],
+            engine="gemini"
         )
     except Exception as e:
-        logger.error("Gagal ekstrak dengan Tesseract: %s", e)
+        logger.error(f"Gagal memproses struk dengan Gemini AI: {e}")
         raise HTTPException(status_code=500, detail=f"Gagal memproses gambar struk: {str(e)}")
