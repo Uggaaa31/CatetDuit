@@ -1,0 +1,25 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Transaction {
+  id               String   @id @default(uuid())
+  type             String   // "income" | "expense"
+  source           String   // "manual" | "ocr" | "email_qris"
+  amount           Float
+  description      String
+  category         String   @default("Lain-lain")
+  merchantName     String?
+  receiptImageUrl  String?
+  notificationRaw  String?  @db.Text
+  userNumber       String
+  createdAt        DateTime @default(now())
+
+  @@index([userNumber])
+  @@index([createdAt])
+}

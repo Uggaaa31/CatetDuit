@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: catatduit_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-finance_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-finance_secret_pass}
+      POSTGRES_DB: ${DB_NAME:-finance_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - finance_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-finance_user} -d ${DB_NAME:-finance_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  whatsapp-gateway:
+    build:
+      context: ./services/whatsapp-gateway
+      dockerfile: Dockerfile
+    container_name: catatduit_whatsapp_gateway
+    restart: unless-stopped
+    environment:
+      - PORT=3001
+      - FINANCE_API_URL=${FINANCE_API_URL:-http://finance-api:3000}
+      - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
+      - MEDIA_DIR=/app/media
+    volumes:
+      - whatsapp_session:/app/auth_info
+      - shared_media:/app/media
+    ports:
+      - "3001:3001"
+    networks:
+      - finance_net
+
+  finance-api:
+    build:
+      context: ./services/finance-api
+      dockerfile: Dockerfile
+    container_name: catatduit_finance_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgresql://${DB_USER:-finance_user}:${DB_PASSWORD:-finance_secret_pass}@postgres:5432/${DB_NAME:-finance_db}
+      - WHATSAPP_GATEWAY_URL=${WHATSAPP_GATEWAY_URL:-http://whatsapp-gateway:3001}
+      - OCR_SERVICE_URL=${OCR_SERVICE_URL:-http://ocr-service:8000}
+      - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
+      - MEDIA_DIR=/app/media
+    volumes:
+      - shared_media:/app/media
+    ports:
+      - "3000:3000"
+    networks:
+      - finance_net
+
+  ocr-service:
+    build:
+      context: ./services/ocr-service
+      dockerfile: Dockerfile
+    container_name: catatduit_ocr_service
+    restart: unless-stopped
+    environment:
+      - PORT=8000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MEDIA_DIR=/app/media
+    volumes:
+      - shared_media:/app/media
+    ports:
+      - "8000:8000"
+    networks:
+      - finance_net
+
+  email-watcher:
+    build:
+      context: ./services/email-watcher
+      dockerfile: Dockerfile
+    container_name: catatduit_email_watcher
+    restart: unless-stopped
+    depends_on:
+      - finance-api
+    environment:
+      - FINANCE_API_URL=${FINANCE_API_URL:-http://finance-api:3000}
+      - IMAP_HOST=${IMAP_HOST}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_USER=${IMAP_USER}
+      - IMAP_PASSWORD=${IMAP_PASSWORD}
+      - IMAP_CHECK_INTERVAL_SECONDS=${IMAP_CHECK_INTERVAL_SECONDS:-30}
+    networks:
+      - finance_net
+
+volumes:
+  postgres_data:
+  whatsapp_session:
+  shared_media:
+
+networks:
+  finance_net:
+    driver: bridge
