@@ -98,7 +98,8 @@ async function executeSalary21(userNumber, isManual = false) {
     `5. 🛒 *Belanja Bulanan:* Rp 400.000 (Kebutuhan pokok & rumah)\n` +
     `6. 📶 *Kuota & Internet:* Rp 100.000\n` +
     `7. ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `8. 🍚 *Uang Makan & Rokok Fase 1 (Tgl 21-31):* Rp 1.500.000\n\n` +
+    `8. 🍚 *Uang Makan Fase 1 (Tgl 21-31):* Rp 1.100.000 (~Rp 100.000/hari)\n` +
+    `9. 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
     `💡 *Tips:* Amankan tabungan & bayar kewajiban di awal agar tidak habis terpakai!\n` +
     `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
 

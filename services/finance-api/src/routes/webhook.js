@@ -141,6 +141,8 @@ router.post('/webhook', async (req, res) => {
               budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
             } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
               budgetAlert = `\n\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
+            } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+              budgetAlert = `\n\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
             }
           }
         }
@@ -430,6 +432,8 @@ router.post('/webhook', async (req, res) => {
             reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
           } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
             reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
+          } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+            reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
           }
         }
       }

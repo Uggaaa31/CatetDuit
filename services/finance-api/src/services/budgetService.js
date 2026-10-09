@@ -264,12 +264,13 @@ function getDualCycleGuide() {
     `• 🛒 *Belanja Bulanan:* Rp 400.000 (Sabun & sembako)\n` +
     `• 📶 *Kuota & Internet:* Rp 100.000\n` +
     `• ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `• 🍚 *Uang Makan & Rokok Fase 1 (Tgl 21-31):* Rp 1.500.000\n\n` +
+    `• 🍚 *Uang Makan Fase 1 (Tgl 21-31):* Rp 1.100.000 (Jatah ~Rp 100.000/hari)\n` +
+    `• 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `💵 *2. TANGGAL 1 — MASUK RP 500.000*\n` +
     `_Fase Penguat Operasional (Tgl 1 s/d 20):_\n` +
     `• ⛽ *Bensin & Transportasi:* Rp 200.000\n` +
-    `• 🍚 *Tambahan Uang Makan Fase 2:* Rp 300.000\n\n` +
+    `• 🍚 *Tambahan Uang Makan Fase 2:* Rp 300.000 (Melengkapi total makan jadi Rp 1.400.000)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🤖 *AUTOMATION BOT:*\n` +
     `• Setiap Tgl 21 jam 08:00 bot otomatis catat +Rp 4.000.000\n` +
