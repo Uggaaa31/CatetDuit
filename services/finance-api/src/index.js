@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const webhookRoutes = require('./routes/webhook');
 const transactionRoutes = require('./routes/transactions');
+const { startRecurringScheduler } = require('./services/schedulerService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,4 +20,7 @@ app.get('/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Finance API running on port ${PORT}`);
+  // Inisialisasi scheduler automasi gajian
+  startRecurringScheduler();
 });
+

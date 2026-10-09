@@ -221,7 +221,11 @@ async function sendTextMessage(to, text) {
   if (!sock || !isConnected) {
     throw new Error('WhatsApp Gateway belum terhubung!');
   }
-  const jid = to.includes('@') ? to : `${to.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+  let jid = to;
+  if (!jid.includes('@')) {
+    const clean = to.replace(/[^0-9]/g, '');
+    jid = clean.length >= 14 && !clean.startsWith('62') ? `${clean}@lid` : `${clean}@s.whatsapp.net`;
+  }
   console.log(`[whatsapp-gateway] Mengirim pesan ke: ${jid}`);
   return await sock.sendMessage(jid, { text });
 }
@@ -230,7 +234,11 @@ async function sendDocumentMessage(to, filePath, fileName, caption = '') {
   if (!sock || !isConnected) {
     throw new Error('WhatsApp Gateway belum terhubung!');
   }
-  const jid = to.includes('@') ? to : `${to.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+  let jid = to;
+  if (!jid.includes('@')) {
+    const clean = to.replace(/[^0-9]/g, '');
+    jid = clean.length >= 14 && !clean.startsWith('62') ? `${clean}@lid` : `${clean}@s.whatsapp.net`;
+  }
   const fileBuffer = fs.readFileSync(filePath);
 
   console.log(`[whatsapp-gateway] Mengirim dokumen ke: ${jid}`);

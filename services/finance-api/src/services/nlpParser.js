@@ -117,6 +117,42 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'budget' };
   }
 
+  if (
+    lower === 'alokasi' ||
+    lower === 'panduan gaji' ||
+    lower === 'rencana belanja' ||
+    lower === 'strategi gaji' ||
+    lower === 'jadwal gaji' ||
+    lower === 'siklus' ||
+    lower === 'cek siklus'
+  ) {
+    return { isCommand: true, action: 'allocation_guide' };
+  }
+
+  if (
+    lower === 'simulasi gaji 21' ||
+    lower === 'trigger gaji 21' ||
+    lower === 'catat gaji 21' ||
+    lower === 'gaji 21'
+  ) {
+    return { isCommand: true, action: 'trigger_salary_21' };
+  }
+
+  if (
+    lower === 'simulasi gaji 1' ||
+    lower === 'trigger gaji 1' ||
+    lower === 'catat gaji 1' ||
+    lower === 'simulasi booster' ||
+    lower === 'trigger booster' ||
+    lower === 'gaji 1'
+  ) {
+    return { isCommand: true, action: 'trigger_salary_1' };
+  }
+
+  if (lower === 'reset budget' || lower === 'reset anggaran' || lower === 'default budget') {
+    return { isCommand: true, action: 'reset_budget' };
+  }
+
   // Format: set budget [kategori] [nominal]
   // Contoh: set budget bensin 250rb
   const setBudgetMatch = text.match(/^(?:set\s+budget|atur\s+budget|set\s+anggaran)\s+([A-Za-z0-9\s,&]+)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)$/i);
@@ -130,7 +166,7 @@ function parseMessage(rawText) {
 
   if (lower === 'rekap' || lower.startsWith('rekap')) {
     let period = 'today';
-    if (lower.includes('bulan') || lower.includes('monthly')) period = 'month';
+    if (lower.includes('bulan') || lower.includes('monthly') || lower.includes('siklus')) period = 'month';
     else if (lower.includes('minggu') || lower.includes('weekly')) period = 'week';
     else if (lower.includes('kemarin')) period = 'yesterday';
     return { isCommand: true, action: 'rekap', period };

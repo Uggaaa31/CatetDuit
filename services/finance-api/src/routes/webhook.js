@@ -9,8 +9,15 @@ const {
   checkBudgetStatus,
   generateBudgetReport,
   updateCategoryBudget,
+  syncDefaultBudgets,
+  getPayCycleRange,
+  getDualCycleGuide,
   DEFAULT_BUDGETS,
 } = require('../services/budgetService');
+const {
+  executeSalary21,
+  executeBooster1,
+} = require('../services/schedulerService');
 const dayjs = require('dayjs');
 
 function formatRupiah(number) {
@@ -24,24 +31,30 @@ function formatRupiah(number) {
 function getPeriodRange(period) {
   const now = dayjs();
   let start;
+  let end = now.endOf('day');
   let label;
 
   if (period === 'month') {
-    start = now.startOf('month');
-    label = `Bulan Ini (${now.format('MMMM YYYY')})`;
+    // Gunakan siklus gajian Tgl 21 s/d Tgl 20 bulan berikutnya
+    const cycle = getPayCycleRange(now);
+    start = cycle.start;
+    end = cycle.end;
+    label = cycle.label;
   } else if (period === 'week') {
-    start = now.startOf('week');
+    start = now.startOf('week').toDate();
     label = 'Minggu Ini';
   } else if (period === 'yesterday') {
-    start = now.subtract(1, 'day').startOf('day');
+    start = now.subtract(1, 'day').startOf('day').toDate();
+    end = now.subtract(1, 'day').endOf('day').toDate();
     label = `Kemarin (${now.subtract(1, 'day').format('DD/MM/YYYY')})`;
   } else {
-    start = now.startOf('day');
+    start = now.startOf('day').toDate();
     label = `Hari Ini (${now.format('DD/MM/YYYY')})`;
   }
 
   return {
-    start: start.toDate(),
+    start,
+    end,
     label,
   };
 }
@@ -125,7 +138,9 @@ router.post('/webhook', async (req, res) => {
             if (budgetStatus.isOverbudget) {
               budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
             } else if (budgetStatus.isWarning) {
-              budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget bulanan (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+              budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+            } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+              budgetAlert = `\n\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
             }
           }
         }
@@ -195,37 +210,67 @@ router.post('/webhook', async (req, res) => {
 • \`pulsa 100rb\`
 
 *2. Catat Pemasukan:*
-• \`+gaji 6.5jt\`
-• \`+pemasukan 500rb freelance\`
+• \`+gaji 4jt\`
+• \`+pemasukan 500rb booster\`
 
-*3. Kirim Foto Struk Belanja:*
-• Cukup kirim foto struk, bot otomatis membaca nama toko, total, dan rincian tiap barang!
+*3. Kirim Foto Struk / M-Banking:*
+• Kirim foto struk belanja atau bukti transfer m-banking, bot otomatis membaca nominal dan detailnya!
 
-*4. Cek Alokasi Anggaran (Budget):*
-• \`budget\` atau \`cek budget\` (melihat batas & sisa kuota tiap kategori)
-• \`set budget bensin 250rb\` (mengubah limit anggaran)
+*4. Cek Alokasi Gaji & Anggaran:*
+• \`alokasi\` (panduan alokasi gajian Tgl 21 & Tgl 1)
+• \`budget\` (cek kuota & sisa hari dalam siklus gajian)
+• \`set budget bensin 250rb\` (ubah limit anggaran)
+• \`reset budget\` (kembalikan ke default Rp 4.500.000)
 
 *5. Cek Rekap & Laporan:*
-• \`rekap\` (rekap hari ini)
+• \`rekap\` (hari ini)
 • \`rekap minggu ini\`
-• \`rekap bulan ini\`
+• \`rekap bulan ini\` (siklus gajian 21 s/d 20)
 
-*6. Batalkan Catatan Terakhir:*
-• Ketik \`batal\` atau \`hapus\`
-
-*7. Ekspor Data ke Excel:*
-• Ketik \`export excel\` atau \`ekspor\``;
+*6. Ekspor Excel & Batalkan:*
+• \`export excel\` (unduh rekapan file Excel)
+• \`batal\` (membatalkan transaksi terakhir)`;
 
         return await sendWhatsAppMessage(from, helpMessage);
       }
 
-      // 2b. STATUS BUDGET BULANAN
+      // 2b. STATUS BUDGET SIKLUS GAJIAN
       if (parsed.action === 'budget') {
         const report = await generateBudgetReport(userNumber);
         return await sendWhatsAppMessage(from, report);
       }
 
-      // 2c. UBAH LIMIT BUDGET
+      // 2c. PANDUAN DUA SIKLUS GAJI
+      if (parsed.action === 'allocation_guide') {
+        const guide = getDualCycleGuide();
+        return await sendWhatsAppMessage(from, guide);
+      }
+
+      // 2d. SIMULASI / TRIGGER GAJI TGL 21 (4 JT)
+      if (parsed.action === 'trigger_salary_21') {
+        await sendWhatsAppMessage(from, '⏳ Memproses pencatatan/simulasi Gaji Pokok Tgl 21 (Rp 4.000.000)...');
+        await executeSalary21(userNumber, true);
+        return;
+      }
+
+      // 2e. SIMULASI / TRIGGER BOOSTER TGL 1 (500K)
+      if (parsed.action === 'trigger_salary_1') {
+        await sendWhatsAppMessage(from, '⏳ Memproses pencatatan/simulasi Booster Tgl 1 (Rp 500.000)...');
+        await executeBooster1(userNumber, true);
+        return;
+      }
+
+      // 2f. RESET ANGGARAN KE STANDAR RP 4.500.000
+      if (parsed.action === 'reset_budget') {
+        await syncDefaultBudgets(userNumber);
+        const reply =
+          `✅ *Anggaran Berhasil Di-Reset ke Standar Alokasi!*\n\n` +
+          `Total Anggaran: *Rp 4.500.000* (Gaji Pokok 4jt + Booster 500k).\n\n` +
+          `_Ketik *budget* untuk melihat seluruh batas kuota._`;
+        return await sendWhatsAppMessage(from, reply);
+      }
+
+      // 2g. UBAH LIMIT BUDGET
       if (parsed.action === 'set_budget') {
         const input = parsed.categoryInput.toLowerCase();
         const availableCats = Object.keys(DEFAULT_BUDGETS);
@@ -242,20 +287,20 @@ router.post('/webhook', async (req, res) => {
         const reply =
           `✅ *Batas Anggaran Berhasil Diperbarui!*\n\n` +
           `🎯 *Kategori:* ${matchedCat}\n` +
-          `💵 *Limit Baru:* ${formatRupiah(parsed.amount)} / bulan\n\n` +
+          `💵 *Limit Baru:* ${formatRupiah(parsed.amount)} / siklus\n\n` +
           `_Ketik *budget* untuk melihat seluruh status anggaran._`;
 
         return await sendWhatsAppMessage(from, reply);
       }
 
-      // 2d. REKAP LAPORAN
+      // 2h. REKAP LAPORAN
       if (parsed.action === 'rekap') {
-        const { start, label } = getPeriodRange(parsed.period);
+        const { start, end, label } = getPeriodRange(parsed.period);
 
         const transactions = await prisma.transaction.findMany({
           where: {
             userNumber,
-            createdAt: { gte: start },
+            createdAt: { gte: start, lte: end },
           },
           orderBy: { createdAt: 'desc' },
         });
@@ -297,7 +342,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, report);
       }
 
-      // 2e. BATAL / UNDO TERAKHIR
+      // 2i. BATAL / UNDO TERAKHIR
       if (parsed.action === 'undo') {
         const lastTx = await prisma.transaction.findFirst({
           where: { userNumber },
@@ -320,7 +365,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, undoReply);
       }
 
-      // 2f. EKSPOR EXCEL
+      // 2j. EKSPOR EXCEL
       if (parsed.action === 'export') {
         await sendWhatsAppMessage(from, '⏳ Sedang menyiapkan file Excel laporan keuangan Anda...');
 
@@ -382,7 +427,9 @@ router.post('/webhook', async (req, res) => {
           if (budgetStatus.isOverbudget) {
             reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
           } else if (budgetStatus.isWarning) {
-            reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget bulanan (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+            reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+          } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+            reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
           }
         }
       }
@@ -398,8 +445,9 @@ router.post('/webhook', async (req, res) => {
       `Contoh cepat:\n` +
       `• \`makan 25rb di warteg\`\n` +
       `• \`rokok surya 35rb di warung\`\n` +
-      `• \`budget\` (cek kuota anggaran)\n` +
-      `• Kirim foto struk belanja\n\n` +
+      `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
+      `• \`alokasi\` (panduan pembagian gaji tgl 21 & 1)\n` +
+      `• Kirim foto struk belanja / m-banking\n\n` +
       `Ketik *bantuan* untuk melihat semua menu.`;
 
     await sendWhatsAppMessage(from, unknownReply);
