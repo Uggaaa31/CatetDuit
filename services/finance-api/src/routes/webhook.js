@@ -56,29 +56,46 @@ router.post('/webhook', async (req, res) => {
   const userNumber = from.replace(/[^0-9]/g, '');
 
   try {
-    // 1. JIKA PESAN BERUPA FOTO STRUK
+    // 1. JIKA PESAN BERUPA FOTO STRUK ATAU RESI M-BANKING
     if (hasImage && imageFilePath) {
       await sendWhatsAppMessage(
         from,
-        '🔍 *Sedang membaca struk belanja Anda...*\nMohon tunggu beberapa detik.'
+        '🔍 *Sedang membaca bukti pembayaran/struk Anda...*\nMohon tunggu beberapa detik.'
       );
 
       try {
         const ocrResult = await extractReceiptData(imageFilePath);
-        const { merchantName, totalAmount, date, items, category } = ocrResult;
+        const {
+          receiptType = 'struk_belanja',
+          transactionType = 'expense',
+          bankName,
+          merchantName,
+          recipientName,
+          notes,
+          totalAmount,
+          date,
+          items,
+          category,
+        } = ocrResult;
 
         if (!totalAmount || totalAmount <= 0) {
           return await sendWhatsAppMessage(
             from,
-            '⚠️ Maaf, total nominal pada struk tidak terbaca jelas. Silakan catat manual, contoh: `indomaret 45rb`'
+            '⚠️ Maaf, nominal transaksi tidak terbaca jelas pada gambar. Silakan catat manual, contoh: `transfer 150rb di BCA` atau `indomaret 45rb`'
           );
         }
 
-        let description = merchantName || 'Belanja Struk';
+        let description = notes || merchantName || recipientName || 'Transaksi';
         let itemListText = '';
 
-        if (items && items.length > 0) {
-          description = items.map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name} (Rp ${formatRupiah(i.price)})`).join(', ');
+        if (receiptType === 'm_banking') {
+          description = notes
+            ? `${notes} (${bankName ? `${bankName} ke ` : ''}${recipientName || merchantName || 'Penerima'})`
+            : `Transfer ${bankName ? `${bankName} ke ` : ''}${recipientName || merchantName || 'Penerima'}`;
+        } else if (items && items.length > 0) {
+          description = items
+            .map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name} (Rp ${formatRupiah(i.price)})`)
+            .join(', ');
           itemListText = '\n*📦 Rincian Barang:*';
           items.forEach((item, idx) => {
             const qtyStr = item.qty > 1 ? ` (${item.qty}x)` : '';
@@ -90,43 +107,72 @@ router.post('/webhook', async (req, res) => {
         const tx = await prisma.transaction.create({
           data: {
             userNumber,
-            type: 'expense',
-            source: 'ocr',
+            type: transactionType,
+            source: receiptType === 'm_banking' ? 'ocr_mbanking' : 'ocr',
             amount: parseFloat(totalAmount),
             description,
-            category: category || 'Belanja Bulanan',
-            merchantName: merchantName || null,
+            category: category || (transactionType === 'income' ? 'Gaji & Pemasukan' : 'Belanja Bulanan'),
+            merchantName: merchantName || recipientName || null,
             receiptImageUrl: imageFilePath,
           },
         });
 
-        // Cek Status Budget
-        const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+        // Cek Status Budget jika Pengeluaran
         let budgetAlert = '';
-        if (budgetStatus.hasBudget) {
-          if (budgetStatus.isOverbudget) {
-            budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
-          } else if (budgetStatus.isWarning) {
-            budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget bulanan (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+        if (transactionType === 'expense') {
+          const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+          if (budgetStatus.hasBudget) {
+            if (budgetStatus.isOverbudget) {
+              budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+            } else if (budgetStatus.isWarning) {
+              budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget bulanan (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+            }
           }
         }
 
-        let reply =
-          `🧾 *Struk Berhasil Dicatat!*\n\n` +
-          `🏪 *Toko/Merchant:* ${merchantName || '-'}\n` +
-          `💵 *Total:* ${formatRupiah(tx.amount)}\n` +
-          `🏷️ *Kategori:* ${tx.category}\n` +
-          `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
-          itemListText +
-          budgetAlert +
-          `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau ketik *budget* untuk melihat kuota._`;
+        let reply = '';
+        const tipeLabel = transactionType === 'income' ? 'Pemasukan' : 'Pengeluaran';
+        const iconTipe = transactionType === 'income' ? '💰' : '💸';
+
+        if (receiptType === 'm_banking') {
+          reply =
+            `📱 *Resi M-Banking / Transfer Berhasil Dicatat!*\n\n` +
+            `🏦 *Bank/Aplikasi:* ${bankName || 'M-Banking'}\n` +
+            `👤 *Tujuan/Penerima:* ${recipientName || merchantName || '-'}\n` +
+            `${iconTipe} *Nominal:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
+            `🏷️ *Kategori:* ${tx.category}\n` +
+            (notes ? `📝 *Berita/Keterangan:* ${notes}\n` : '') +
+            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            budgetAlert +
+            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+        } else if (receiptType === 'qris') {
+          reply =
+            `📱 *Pembayaran QRIS Berhasil Dicatat!*\n\n` +
+            `🏪 *Merchant/Toko:* ${merchantName || '-'}\n` +
+            (bankName ? `🏦 *Aplikasi:* ${bankName}\n` : '') +
+            `${iconTipe} *Nominal:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
+            `🏷️ *Kategori:* ${tx.category}\n` +
+            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            budgetAlert +
+            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+        } else {
+          reply =
+            `🧾 *Struk Belanja Berhasil Dicatat!*\n\n` +
+            `🏪 *Toko/Merchant:* ${merchantName || '-'}\n` +
+            `${iconTipe} *Total:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
+            `🏷️ *Kategori:* ${tx.category}\n` +
+            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            itemListText +
+            budgetAlert +
+            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+        }
 
         return await sendWhatsAppMessage(from, reply);
       } catch (ocrErr) {
-        console.error('Error saat OCR struk:', ocrErr);
+        console.error('Error saat OCR bukti pembayaran:', ocrErr);
         return await sendWhatsAppMessage(
           from,
-          `⚠️ Gagal memproses struk: ${ocrErr.message || 'Error OCR'}. Anda bisa mencatat manual: ketik misalnya \`indomaret 45rb\``
+          `⚠️ Gagal memproses gambar: ${ocrErr.message || 'Error OCR'}. Anda bisa mencatat manual: ketik misalnya \`transfer 150rb di BCA\``
         );
       }
     }
