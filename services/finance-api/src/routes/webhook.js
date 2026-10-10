@@ -17,6 +17,7 @@ const {
 const {
   executeSalary21,
   executeBooster1,
+  executeNightlyReminder,
 } = require('../services/schedulerService');
 const dayjs = require('dayjs');
 
@@ -204,12 +205,11 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'help') {
         const helpMessage =
           `🤖 *Buku Kas WhatsApp - Panduan Penggunaan*\n\n` +
-          `*1. Catat Pengeluaran:*
-• \`makan siang 35rb di warteg\`
+          `*1. Catat Pengeluaran (Bisa Banyak Sekaligus):*
+• \`makan 25rb, es teh 5rb, parkir 2rb\`
+• \`bensin 50rb sama rokok 35rb di SPBU\`
 • \`rokok surya 35rb di warung\`
-• \`bensin 50000 di SPBU\`
 • \`nongkrong kopi 25k di Janji Jiwa\`
-• \`pulsa 100rb\`
 
 *2. Catat Pemasukan:*
 • \`+gaji 4jt\`
@@ -224,12 +224,17 @@ router.post('/webhook', async (req, res) => {
 • \`set budget bensin 250rb\` (ubah limit anggaran)
 • \`reset budget\` (kembalikan ke default Rp 4.500.000)
 
-*5. Cek Rekap & Laporan:*
+*5. Pengingat & Simulasi:*
+• \`simulasi pengingat malam\` (tes notifikasi jam 22:30)
+• \`simulasi gaji 21\` (tes pencatatan gaji pokok 4jt)
+• \`simulasi gaji 1\` (tes pencatatan booster 500k)
+
+*6. Cek Rekap & Laporan:*
 • \`rekap\` (hari ini)
 • \`rekap minggu ini\`
 • \`rekap bulan ini\` (siklus gajian 21 s/d 20)
 
-*6. Ekspor Excel & Batalkan:*
+*7. Ekspor Excel & Batalkan:*
 • \`export excel\` (unduh rekapan file Excel)
 • \`batal\` (membatalkan transaksi terakhir)`;
 
@@ -262,7 +267,14 @@ router.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 2f. RESET ANGGARAN KE STANDAR RP 4.500.000
+      // 2f. SIMULASI PENGINGAT MALAM HARI (22:30)
+      if (parsed.action === 'trigger_nightly_reminder') {
+        await sendWhatsAppMessage(from, '⏳ Menjalankan simulasi pengingat malam (22:30)...');
+        await executeNightlyReminder(userNumber, true);
+        return;
+      }
+
+      // 2g. RESET ANGGARAN KE STANDAR RP 4.500.000
       if (parsed.action === 'reset_budget') {
         await syncDefaultBudgets(userNumber);
         const reply =
@@ -272,7 +284,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, reply);
       }
 
-      // 2g. UBAH LIMIT BUDGET
+      // 2h. UBAH LIMIT BUDGET
       if (parsed.action === 'set_budget') {
         const input = parsed.categoryInput.toLowerCase();
         const availableCats = Object.keys(DEFAULT_BUDGETS);
@@ -295,7 +307,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, reply);
       }
 
-      // 2h. REKAP LAPORAN
+      // 2i. REKAP LAPORAN
       if (parsed.action === 'rekap') {
         const { start, end, label } = getPeriodRange(parsed.period);
 
@@ -344,7 +356,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, report);
       }
 
-      // 2i. BATAL / UNDO TERAKHIR
+      // 2j. BATAL / UNDO TERAKHIR (Mendukung pembatalan multi-item sekaligus)
       if (parsed.action === 'undo') {
         const lastTx = await prisma.transaction.findFirst({
           where: { userNumber },
@@ -353,6 +365,34 @@ router.post('/webhook', async (req, res) => {
 
         if (!lastTx) {
           return await sendWhatsAppMessage(from, 'ℹ️ Tidak ada transaksi untuk dibatalkan.');
+        }
+
+        // Cek apakah ada transaksi berdekatan (dalam selang 4 detik, batch multi-item)
+        const recentTxs = await prisma.transaction.findMany({
+          where: {
+            userNumber,
+            createdAt: {
+              gte: new Date(lastTx.createdAt.getTime() - 4000),
+              lte: new Date(lastTx.createdAt.getTime() + 1000),
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (recentTxs.length > 1) {
+          await prisma.transaction.deleteMany({
+            where: { id: { in: recentTxs.map((t) => t.id) } },
+          });
+
+          let itemsDeleted = recentTxs
+            .map((t, idx) => `${idx + 1}. ${t.description} — ${formatRupiah(t.amount)} (${t.category})`)
+            .join('\n');
+
+          const undoReply =
+            `🗑️ *${recentTxs.length} Transaksi Terakhir Dibatalkan Sekaligus!*\n\n` +
+            itemsDeleted;
+
+          return await sendWhatsAppMessage(from, undoReply);
         }
 
         await prisma.transaction.delete({ where: { id: lastTx.id } });
@@ -367,7 +407,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, undoReply);
       }
 
-      // 2j. EKSPOR EXCEL
+      // 2k. EKSPOR EXCEL
       if (parsed.action === 'export') {
         await sendWhatsAppMessage(from, '⏳ Sedang menyiapkan file Excel laporan keuangan Anda...');
 
@@ -393,52 +433,125 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
-    // 3. JIKA TRANSAKSI REGULER (makan 25rb, +gaji 5jt, dll.)
-    if (parsed.isTransaction && parsed.data) {
-      const { type, amount, description, category, merchantName, source } = parsed.data;
+    // 3. JIKA TRANSAKSI REGULER (Single Item atau Multi-Item Sekaligus)
+    if (parsed.isTransaction) {
+      const items = parsed.items || (parsed.data ? [parsed.data] : []);
+      if (items.length === 0) return;
 
-      const tx = await prisma.transaction.create({
-        data: {
-          userNumber,
-          type,
-          amount,
-          description,
-          category,
-          merchantName: merchantName || null,
-          source,
-        },
-      });
+      // Kasus A: 1 Item Transaksi Tunggal
+      if (items.length === 1) {
+        const { type, amount, description, category, merchantName, source } = items[0];
 
-      const icon = type === 'income' ? '💰' : '💸';
-      const label = type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+        const tx = await prisma.transaction.create({
+          data: {
+            userNumber,
+            type,
+            amount,
+            description,
+            category,
+            merchantName: merchantName || null,
+            source: source || 'manual',
+          },
+        });
 
-      let reply =
-        `✅ *${label} Berhasil Dicatat!*\n\n` +
-        `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
-        `🏷️ *Kategori:* ${tx.category}\n` +
-        `📦 *Barang/Catatan:* ${tx.description}\n`;
+        const icon = type === 'income' ? '💰' : '💸';
+        const label = type === 'income' ? 'Pemasukan' : 'Pengeluaran';
 
-      if (tx.merchantName) {
-        reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
+        let reply =
+          `✅ *${label} Berhasil Dicatat!*\n\n` +
+          `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
+          `🏷️ *Kategori:* ${tx.category}\n` +
+          `📦 *Barang/Catatan:* ${tx.description}\n`;
+
+        if (tx.merchantName) {
+          reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
+        }
+
+        // Cek Status Budget jika pengeluaran
+        if (type === 'expense') {
+          const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+          if (budgetStatus.hasBudget) {
+            if (budgetStatus.isOverbudget) {
+              reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+            } else if (budgetStatus.isWarning) {
+              reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+            } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+              reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
+            } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+              reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
+            }
+          }
+        }
+
+        reply += `\n\n_Ketik *batal* jika salah catat, atau *budget* untuk melihat sisa kuota._`;
+        return await sendWhatsAppMessage(from, reply);
       }
 
-      // Cek Status Budget jika pengeluaran
-      if (type === 'expense') {
-        const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+      // Kasus B: Multi-Item Transaksi Sekaligus (contoh: "makan 25rb, es teh 5rb, parkir 2rb")
+      let totalExpense = 0;
+      let totalIncome = 0;
+      const createdTxs = [];
+
+      for (const item of items) {
+        const tx = await prisma.transaction.create({
+          data: {
+            userNumber,
+            type: item.type,
+            amount: item.amount,
+            description: item.description,
+            category: item.category,
+            merchantName: item.merchantName || null,
+            source: 'manual_multi',
+          },
+        });
+        createdTxs.push(tx);
+        if (item.type === 'income') totalIncome += item.amount;
+        else totalExpense += item.amount;
+      }
+
+      let itemListText = '';
+      createdTxs.forEach((tx, idx) => {
+        const icon = tx.type === 'income' ? '💰' : '💸';
+        const merch = tx.merchantName ? ` (@${tx.merchantName})` : '';
+        itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)}\n`;
+      });
+
+      let summaryText = '';
+      if (totalExpense > 0 && totalIncome > 0) {
+        summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+      } else if (totalIncome > 0) {
+        summaryText = `💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+      } else {
+        summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}`;
+      }
+
+      // Cek status anggaran untuk kategori-kategori yang terpengaruh
+      let budgetAlerts = [];
+      const expenseCats = [...new Set(createdTxs.filter((t) => t.type === 'expense').map((t) => t.category))];
+      for (const cat of expenseCats) {
+        const budgetStatus = await checkBudgetStatus(userNumber, cat);
         if (budgetStatus.hasBudget) {
           if (budgetStatus.isOverbudget) {
-            reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+            budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
           } else if (budgetStatus.isWarning) {
-            reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
-          } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-            reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
-          } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-            reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
+            budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+          } else if (cat === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+            budgetAlerts.push(`💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari)`);
+          } else if (cat === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+            budgetAlerts.push(`🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)}`);
           }
         }
       }
 
-      reply += `\n\n_Ketik *batal* jika salah catat, atau *budget* untuk melihat sisa kuota._`;
+      const alertBlock = budgetAlerts.length > 0 ? `\n${budgetAlerts.join('\n')}\n` : '';
+
+      const reply =
+        `✅ *${createdTxs.length} Transaksi Berhasil Dicatat Sekaligus!*\n\n` +
+        itemListText +
+        `═══════════════════════\n` +
+        summaryText + '\n' +
+        alertBlock +
+        `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._`;
 
       return await sendWhatsAppMessage(from, reply);
     }
@@ -448,6 +561,7 @@ router.post('/webhook', async (req, res) => {
       `Halo *${senderName}*! Format pesan belum dikenali.\n\n` +
       `Contoh cepat:\n` +
       `• \`makan 25rb di warteg\`\n` +
+      `• \`makan 25rb, es teh 5rb, parkir 2rb\` (catat banyak sekaligus)\n` +
       `• \`rokok surya 35rb di warung\`\n` +
       `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
       `• \`alokasi\` (panduan pembagian gaji tgl 21 & 1)\n` +

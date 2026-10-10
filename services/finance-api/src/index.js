@@ -1,3 +1,5 @@
+process.env.TZ = process.env.TZ || 'Asia/Makassar';
+
 const express = require('express');
 const cors = require('cors');
 const webhookRoutes = require('./routes/webhook');

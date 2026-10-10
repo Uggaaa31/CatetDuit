@@ -28,6 +28,7 @@ services:
       - FINANCE_API_URL=${FINANCE_API_URL:-http://finance-api:3000}
       - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
       - MEDIA_DIR=/app/media
+      - TZ=${TZ:-Asia/Makassar}
     volumes:
       - whatsapp_session:/app/auth_info
       - shared_media:/app/media
@@ -52,6 +53,7 @@ services:
       - OCR_SERVICE_URL=${OCR_SERVICE_URL:-http://ocr-service:8000}
       - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
       - MEDIA_DIR=/app/media
+      - TZ=${TZ:-Asia/Makassar}
     volumes:
       - shared_media:/app/media
     ports:

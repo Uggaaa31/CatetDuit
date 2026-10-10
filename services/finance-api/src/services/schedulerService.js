@@ -1,9 +1,10 @@
 const prisma = require('../db');
 const dayjs = require('dayjs');
-const { getPayCycleRange, formatRupiah } = require('./budgetService');
+const { getPayCycleRange, formatRupiah, checkBudgetStatus } = require('./budgetService');
 const { sendWhatsAppMessage } = require('./waClient');
 
 const BOT_NUMBERS = ['62881081881341', '227087872991280'];
+const sentNightlyReminders = new Set();
 
 /**
  * Mendapatkan daftar user WhatsApp aktif untuk dikirimi notifikasi automasi
@@ -169,29 +170,112 @@ async function executeBooster1(userNumber, isManual = false) {
 }
 
 /**
+ * Pengingat Malam Hari Otomatis jam 22:30 (10.30 Malam)
+ */
+async function executeNightlyReminder(userNumber, isManual = false) {
+  const now = dayjs();
+  const startOfDay = now.startOf('day').toDate();
+  const endOfDay = now.endOf('day').toDate();
+
+  const todayExpenses = await prisma.transaction.findMany({
+    where: {
+      userNumber,
+      type: 'expense',
+      createdAt: { gte: startOfDay, lte: endOfDay },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const cycle = getPayCycleRange(now);
+  const foodStatus = await checkBudgetStatus(userNumber, 'Makanan & Minuman');
+
+  let message = '';
+
+  if (todayExpenses.length === 0) {
+    message =
+      `🌙 *Halo Bro! Pengingat Malam (22:30)*\n\n` +
+      `Hari ini belum ada catatan pengeluaran sama sekali nih. 😉\n` +
+      `Apakah hari ini memang hemat atau ada jajan/bensin yang kelupaan dicatat?\n\n` +
+      `💡 *Tips Cepat:* Anda bisa mencatat banyak item sekaligus lho, contoh:\n` +
+      `• \`makan 25rb, es teh 5rb, parkir 2rb\`\n` +
+      `• \`bensin 50rb sama rokok 35rb di SPBU\`\n\n` +
+      `📊 *Status Kuota Makanan Siklus Ini:*\n` +
+      `• Sisa Kuota: ${formatRupiah(foodStatus.remaining)}\n` +
+      `• Jatah Aman Esok Hari: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari lagi).\n\n` +
+      `_Selamat beristirahat! 😴_`;
+  } else {
+    let totalSpentToday = 0;
+    const catMap = {};
+
+    todayExpenses.forEach((t) => {
+      totalSpentToday += t.amount;
+      catMap[t.category] = (catMap[t.category] || 0) + t.amount;
+    });
+
+    let catLines = Object.entries(catMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, amt]) => `• ${cat}: ${formatRupiah(amt)}`)
+      .join('\n');
+
+    message =
+      `🌙 *Rekap Pengeluaran Hari Ini (22:30)*\n\n` +
+      `Hari ini Anda telah mencatat *${todayExpenses.length} pengeluaran*:\n` +
+      `💸 *Total Keluar Hari Ini:* ${formatRupiah(totalSpentToday)}\n\n` +
+      `📋 *Rincian Kategori:*\n` +
+      `${catLines}\n\n` +
+      `═══════════════════════\n` +
+      `💡 *Info Esok Hari:*\n` +
+      `🍚 Sisa kuota makanan: ${formatRupiah(foodStatus.remaining)}\n` +
+      `⏳ Jatah aman harian: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari menuju gajian ${cycle.nextPaydayFormatted}).\n\n` +
+      `_Selamat beristirahat! 😴_`;
+  }
+
+  try {
+    await sendWhatsAppMessage(userNumber, message);
+  } catch (err) {
+    console.error(`[scheduler] Gagal kirim pengingat malam ke ${userNumber}:`, err.message);
+  }
+
+  return { success: true, count: todayExpenses.length };
+}
+
+/**
  * Scheduler yang berjalan di background
  */
 function startRecurringScheduler() {
-  console.log('⏰ [scheduler] Layanan Automasi Gaji Terjadwal (Tgl 21 & Tgl 1) telah aktif.');
+  console.log('⏰ [scheduler] Layanan Automasi Gaji Terjadwal (Tgl 21 & Tgl 1) & Pengingat Malam (22:30) telah aktif.');
 
   async function checkAndRun() {
     const now = dayjs();
     const date = now.date();
     const hour = now.hour();
-
-    // Hanya picu setelah jam 08:00 pagi
-    if (hour < 8) return;
+    const minute = now.minute();
 
     try {
       const users = await getTargetUserNumbers();
 
-      if (date === 21) {
-        for (const userNumber of users) {
-          await executeSalary21(userNumber, false);
+      // 1. Eksekusi Gaji Pokok (Tgl 21) & Booster (Tgl 1) jam 08:00 pagi
+      if (hour >= 8) {
+        if (date === 21) {
+          for (const userNumber of users) {
+            await executeSalary21(userNumber, false);
+          }
+        } else if (date === 1) {
+          for (const userNumber of users) {
+            await executeBooster1(userNumber, false);
+          }
         }
-      } else if (date === 1) {
+      }
+
+      // 2. Eksekusi Pengingat Malam Hari Otomatis jam 22:30 malam (rentang 22:30 - 22:40)
+      if (hour === 22 && minute >= 30 && minute <= 40) {
+        const todayStr = now.format('YYYY-MM-DD');
         for (const userNumber of users) {
-          await executeBooster1(userNumber, false);
+          const key = `${userNumber}_${todayStr}`;
+          if (!sentNightlyReminders.has(key)) {
+            await executeNightlyReminder(userNumber, false);
+            sentNightlyReminders.add(key);
+          }
         }
       }
     } catch (err) {
@@ -199,8 +283,8 @@ function startRecurringScheduler() {
     }
   }
 
-  // Cek setiap 5 menit (300.000 ms)
-  setInterval(checkAndRun, 5 * 60 * 1000);
+  // Cek setiap 60 detik (1 menit) agar presisi pada 22:30
+  setInterval(checkAndRun, 60 * 1000);
 
   // Jalankan cek pertama kali 5 detik setelah server start
   setTimeout(checkAndRun, 5000);
@@ -210,5 +294,6 @@ module.exports = {
   getTargetUserNumbers,
   executeSalary21,
   executeBooster1,
+  executeNightlyReminder,
   startRecurringScheduler,
 };

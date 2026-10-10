@@ -101,6 +101,129 @@ function detectCategory(text, type = 'expense') {
 }
 
 /**
+ * Ekstrak item-item transaksi dari string teks
+ * Mendukung single item maupun multi-item (dipisahkan baris baru, koma, atau kata hubung)
+ */
+function extractTransactionItems(text) {
+  let workingText = text.trim();
+  let globalMerchant = null;
+
+  // Cek prefix merchant: 'di indomaret: sabun 20rb, odol 15rb'
+  const prefixMerchantMatch = workingText.match(/^(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})\s*[:|-]\s*(.+)$/i);
+  if (prefixMerchantMatch) {
+    globalMerchant = prefixMerchantMatch[1].trim();
+    workingText = prefixMerchantMatch[2].trim();
+  }
+
+  // Cek suffix merchant: 'sabun 20rb, odol 15rb di indomaret'
+  const suffixMerchantMatch = workingText.match(/(.+?)\s+(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})$/i);
+  if (suffixMerchantMatch) {
+    const candidateSuffix = suffixMerchantMatch[2].trim();
+    if (!parseNominal(candidateSuffix)) {
+      globalMerchant = candidateSuffix;
+      workingText = suffixMerchantMatch[1].trim();
+    }
+  }
+
+  const nominalRegex = /(?:rp\.?\s*)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)/gi;
+  const allNominalMatches = workingText.match(nominalRegex) || [];
+
+  if (allNominalMatches.length === 0) {
+    return [];
+  }
+
+  let candidateChunks = [workingText];
+
+  // Jika ada lebih dari 1 nominal, lakukan pembagian berdasarkan delimiter
+  if (allNominalMatches.length > 1) {
+    if (workingText.includes('\n')) {
+      candidateChunks = workingText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    } else if (workingText.includes(',') || workingText.includes(';')) {
+      candidateChunks = workingText.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    } else {
+      candidateChunks = workingText.split(/\s+(?:dan|sama|plus|\+)\s+/i).map((s) => s.trim()).filter(Boolean);
+    }
+
+    // Perhalus jika chunk masih berisi lebih dari 1 nominal
+    let refinedChunks = [];
+    for (const chunk of candidateChunks) {
+      const chunkNoms = chunk.match(nominalRegex) || [];
+      if (chunkNoms.length > 1) {
+        const subChunks = chunk.split(/\s+(?:dan|sama|plus|\+)\s+/i).map((s) => s.trim()).filter(Boolean);
+        refinedChunks.push(...subChunks);
+      } else {
+        refinedChunks.push(chunk);
+      }
+    }
+    candidateChunks = refinedChunks;
+  }
+
+  const items = [];
+  for (const chunk of candidateChunks) {
+    let itemText = chunk.replace(/^[-•*0-9.]+\s*/, '').trim();
+    let isIncome = false;
+
+    if (itemText.startsWith('+')) {
+      isIncome = true;
+      itemText = itemText.substring(1).trim();
+    }
+
+    const incomePrefixMatch = itemText.match(/^(?:pemasukan|income|terima|dapat)\s+/i);
+    if (incomePrefixMatch) {
+      isIncome = true;
+      itemText = itemText.substring(incomePrefixMatch[0].length).trim();
+    }
+
+    nominalRegex.lastIndex = 0;
+    const match = nominalRegex.exec(itemText);
+    if (!match) continue;
+
+    const parsedAmount = parseNominal(match[1]);
+    if (!parsedAmount || parsedAmount <= 0) continue;
+
+    let description = itemText.replace(match[0], '').trim();
+    description = description.replace(/^[-–—:]\s*/, '').replace(/\s*[-–—:]$/, '').trim();
+
+    let merchantName = globalMerchant;
+    const diTokoMatch = description.match(/(?:\s+(?:di|ke|@)\s+)([A-Za-z0-9\s.\-]{2,40})$/i);
+    if (diTokoMatch) {
+      merchantName = diTokoMatch[1].trim();
+      description = description.substring(0, diTokoMatch.index).trim();
+    }
+
+    if (!description) {
+      description = isIncome ? 'Pemasukan' : 'Pengeluaran';
+    }
+
+    if (!isIncome) {
+      const lowerDesc = description.toLowerCase();
+      if (
+        lowerDesc.includes('gaji') ||
+        lowerDesc.includes('bonus') ||
+        lowerDesc.includes('dividen') ||
+        lowerDesc.includes('arisan')
+      ) {
+        isIncome = true;
+      }
+    }
+
+    const type = isIncome ? 'income' : 'expense';
+    const category = detectCategory(description, type);
+
+    items.push({
+      type,
+      amount: parsedAmount,
+      description,
+      category,
+      merchantName: merchantName || null,
+      source: 'manual',
+    });
+  }
+
+  return items;
+}
+
+/**
  * Parse pesan WhatsApp
  */
 function parseMessage(rawText) {
@@ -149,6 +272,16 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'trigger_salary_1' };
   }
 
+  if (
+    lower === 'simulasi pengingat malam' ||
+    lower === 'trigger pengingat malam' ||
+    lower === 'tes pengingat malam' ||
+    lower === 'pengingat malam' ||
+    lower === 'reminder malam'
+  ) {
+    return { isCommand: true, action: 'trigger_nightly_reminder' };
+  }
+
   if (lower === 'reset budget' || lower === 'reset anggaran' || lower === 'default budget') {
     return { isCommand: true, action: 'reset_budget' };
   }
@@ -182,111 +315,25 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'export', period };
   }
 
-  // 2. Cek Transaksi Keuangan
-  let isIncome = false;
-  let workingText = text;
-
-  // Cek apakah diawali tanda '+'
-  if (workingText.startsWith('+')) {
-    isIncome = true;
-    workingText = workingText.substring(1).trim();
+  // 2. Cek Transaksi Keuangan (Single Item atau Multi-Item)
+  const items = extractTransactionItems(text);
+  if (items.length > 0) {
+    return {
+      isCommand: false,
+      isTransaction: true,
+      isMulti: items.length > 1,
+      items,
+      data: items[0], // Backwards compatibility untuk handler single-item
+    };
   }
 
-  // Cek kata kunci pemasukan eksplisit di awal
-  const incomePrefixMatch = workingText.match(/^(?:pemasukan|income|terima|dapat)\s+/i);
-  if (incomePrefixMatch) {
-    isIncome = true;
-    workingText = workingText.substring(incomePrefixMatch[0].length).trim();
-  }
-
-  // Regex mencari token nominal di dalam string
-  const nominalRegex = /(?:rp\.?\s*)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)/gi;
-
-  let match;
-  let parsedAmount = null;
-  let amountMatchStr = '';
-
-  // Cari token yang valid sebagai nominal
-  while ((match = nominalRegex.exec(workingText)) !== null) {
-    const candidate = match[1];
-    const val = parseNominal(candidate);
-    if (val !== null && val > 0) {
-      parsedAmount = val;
-      amountMatchStr = match[0];
-      break;
-    }
-  }
-
-  if (!parsedAmount) {
-    return { isCommand: false, isTransaction: false, rawText: text };
-  }
-
-  // Bersihkan deskripsi dengan menghapus bagian nominal yang cocok
-  let description = workingText.replace(amountMatchStr, '').trim();
-  description = description.replace(/^[-–—:]\s*/, '').replace(/\s*[-–—:]$/, '').trim();
-
-  // Ekstrak Toko / Merchant jika ada kata sambung "di", "ke", "@", atau pemisah ":"
-  let merchantName = null;
-
-  // Pola 1: "... di Indomaret" atau "... @Indomaret" di bagian akhir
-  const diTokoMatch = description.match(/(?:\s+(?:di|ke|@)\s+)([A-Za-z0-9\s\.\-]{2,40})$/i);
-  if (diTokoMatch) {
-    merchantName = diTokoMatch[1].trim();
-    description = description.substring(0, diTokoMatch.index).trim();
-  } else {
-    // Pola 2: "di Indomaret beli sabun"
-    const prefixDiMatch = description.match(/^(?:di|ke)\s+([A-Za-z0-9\s\.\-]{2,30})\s+(?:beli|ambil|bayar|pesan)?\s+/i);
-    if (prefixDiMatch) {
-      merchantName = prefixDiMatch[1].trim();
-      description = description.substring(prefixDiMatch[0].length).trim();
-    } else {
-      // Pola 3: "Indomaret : sabun dan beras"
-      const colonMatch = description.match(/^([A-Za-z0-9\s\.\-]{2,30})\s*[:|]\s*(.*)$/);
-      if (colonMatch) {
-        merchantName = colonMatch[1].trim();
-        description = colonMatch[2].trim();
-      }
-    }
-  }
-
-  // Jika deskripsi kosong, beri deskripsi default
-  if (!description) {
-    description = isIncome ? 'Pemasukan' : 'Pengeluaran';
-  }
-
-  // Cek apakah deskripsi mengindikasikan gaji/pemasukan
-  if (!isIncome) {
-    const lowerDesc = description.toLowerCase();
-    if (
-      lowerDesc.includes('gaji') ||
-      lowerDesc.includes('bonus') ||
-      lowerDesc.includes('dividen') ||
-      lowerDesc.includes('arisan')
-    ) {
-      isIncome = true;
-    }
-  }
-
-  const type = isIncome ? 'income' : 'expense';
-  const category = detectCategory(description, type);
-
-  return {
-    isCommand: false,
-    isTransaction: true,
-    data: {
-      type,
-      amount: parsedAmount,
-      description,
-      category,
-      merchantName,
-      source: 'manual',
-    },
-  };
+  return { isCommand: false, isTransaction: false, rawText: text };
 }
 
 module.exports = {
   parseMessage,
   parseNominal,
   detectCategory,
+  extractTransactionItems,
   CATEGORY_KEYWORDS,
 };
