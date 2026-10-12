@@ -282,6 +282,17 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'trigger_nightly_reminder' };
   }
 
+  if (
+    lower === 'restart keuangan' ||
+    lower === 'reset keuangan' ||
+    lower === 'reset data' ||
+    lower === 'reset transaksi' ||
+    lower === 'hapus semua data' ||
+    lower === 'hapus semua transaksi'
+  ) {
+    return { isCommand: true, action: 'reset_all_data' };
+  }
+
   if (lower === 'reset budget' || lower === 'reset anggaran' || lower === 'default budget') {
     return { isCommand: true, action: 'reset_budget' };
   }

@@ -234,9 +234,10 @@ router.post('/webhook', async (req, res) => {
 • \`rekap minggu ini\`
 • \`rekap bulan ini\` (siklus gajian 21 s/d 20)
 
-*7. Ekspor Excel & Batalkan:*
+*7. Ekspor Excel, Batal & Restart:*
 • \`export excel\` (unduh rekapan file Excel)
-• \`batal\` (membatalkan transaksi terakhir)`;
+• \`batal\` (membatalkan transaksi terakhir)
+• \`restart keuangan\` (hapus semua transaksi & mulai dari nol)`;
 
         return await sendWhatsAppMessage(from, helpMessage);
       }
@@ -274,7 +275,30 @@ router.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 2g. RESET ANGGARAN KE STANDAR RP 4.500.000
+      // 2g. RESTART / RESET SEMUA DATA KEUANGAN
+      if (parsed.action === 'reset_all_data') {
+        const count = await prisma.transaction.count({
+          where: { userNumber },
+        });
+
+        await prisma.transaction.deleteMany({
+          where: { userNumber },
+        });
+
+        await syncDefaultBudgets(userNumber);
+
+        const reply =
+          `🔄 *DATA KEUANGAN BERHASIL DI-RESTART!*\n\n` +
+          `• 🗑️ *Total Transaksi Dihapus:* ${count} transaksi\n` +
+          `• 💰 *Saldo Kas Sekarang:* Rp 0\n` +
+          `• 🎯 *Alokasi Anggaran:* Di-reset ke standar Rp 4.500.000\n\n` +
+          `Buku kas Anda sekarang telah bersih dan siap digunakan dari awal.\n` +
+          `_Ketik 'budget' untuk cek kuota atau mulai catat pengeluaran baru Anda!_`;
+
+        return await sendWhatsAppMessage(from, reply);
+      }
+
+      // 2h. RESET ANGGARAN KE STANDAR RP 4.500.000
       if (parsed.action === 'reset_budget') {
         await syncDefaultBudgets(userNumber);
         const reply =
