@@ -60,12 +60,36 @@ function getPeriodRange(period) {
   };
 }
 
+function isAllowedSender(from) {
+  if (!from) return false;
+  // Tolak SEMUA pesan grup WhatsApp
+  if (from.endsWith('@g.us') || from.includes('@g.us')) return false;
+
+  const raw = process.env.ALLOWED_NUMBERS || '';
+  const allowed = raw
+    .split(',')
+    .map((n) => n.trim().replace(/[^0-9]/g, ''))
+    .filter(Boolean);
+
+  if (allowed.length === 0) return false;
+  if (allowed.includes('*')) return true;
+
+  const clean = from.split('@')[0].replace(/[^0-9]/g, '');
+  return allowed.includes(clean);
+}
+
 router.post('/webhook', async (req, res) => {
   const { from, senderName, text, hasImage, imageFilePath } = req.body;
   if (!from) return res.status(400).json({ error: 'Missing "from" sender' });
 
   // Acknowledge webhook immediately to avoid timeout
   res.json({ received: true });
+
+  // Tolak pesan dari grup atau nomor yang tidak terdaftar di ALLOWED_NUMBERS .env
+  if (!isAllowedSender(from)) {
+    console.log(`[finance-api] Pesan diabaikan (bukan chat pribadi atau nomor tidak terdaftar di .env): ${from}`);
+    return;
+  }
 
   const userNumber = from.replace(/[^0-9]/g, '');
 
@@ -308,7 +332,7 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, reply);
       }
 
-      // 2h. UBAH LIMIT BUDGET
+      // 2i. UBAH LIMIT BUDGET
       if (parsed.action === 'set_budget') {
         const input = parsed.categoryInput.toLowerCase();
         const availableCats = Object.keys(DEFAULT_BUDGETS);

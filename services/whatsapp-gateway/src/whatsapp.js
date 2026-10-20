@@ -33,26 +33,25 @@ function getAllowedNumbers() {
     .filter(Boolean);
 }
 
-function isSenderAllowed(senderJid, msgKey) {
+function isSenderAllowed(senderJid) {
+  if (!senderJid) return false;
+
+  // 1. Tolak SEMUA pesan dari grup WhatsApp (@g.us)
+  if (senderJid.endsWith('@g.us') || senderJid.includes('@g.us')) {
+    return false;
+  }
+
+  // 2. Hanya izinkan chat pribadi (@s.whatsapp.net atau @lid)
+  if (!senderJid.endsWith('@s.whatsapp.net') && !senderJid.endsWith('@lid')) {
+    return false;
+  }
+
   const allowed = getAllowedNumbers();
-  if (allowed.length === 0 || allowed.includes('*')) return true;
+  if (allowed.length === 0) return false;
+  if (allowed.includes('*')) return true;
 
-  const senderNumber = senderJid.split('@')[0];
-  if (allowed.includes(senderNumber)) return true;
-
-  if (msgKey?.participant) {
-    const p = msgKey.participant.split('@')[0];
-    if (allowed.includes(p)) return true;
-  }
-
-  // Jika chat pribadi (@lid atau @s.whatsapp.net), dan allowed mengandung nomor user/bot
-  // secara otomatis izinkan pesan pribadi pengguna yang sedang berinteraksi
-  if (senderJid.endsWith('@lid') || senderJid.endsWith('@s.whatsapp.net')) {
-    // Jika senderNumber terdaftar di allowed
-    if (allowed.includes(senderNumber)) return true;
-  }
-
-  return false;
+  const cleanSender = senderJid.split('@')[0].replace(/[^0-9]/g, '');
+  return allowed.includes(cleanSender);
 }
 
 async function connectToWhatsApp() {
@@ -134,9 +133,12 @@ async function connectToWhatsApp() {
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
       const sender = msg.key.remoteJid;
-      if (!sender || sender.includes('@broadcast')) continue;
+      // Lewati siaran broadcast dan SEMUA grup WhatsApp
+      if (!sender || sender.includes('@broadcast') || sender.endsWith('@g.us') || sender.includes('@g.us')) {
+        continue;
+      }
 
-      if (!isSenderAllowed(sender, msg.key)) {
+      if (!isSenderAllowed(sender)) {
         console.log(`Pesan ditolak dari nomor/LID tidak terdaftar: ${sender}`);
         continue;
       }
