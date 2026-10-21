@@ -276,7 +276,7 @@ router.post('/webhook', async (req, res) => {
 • \`nongkrong kopi 25k di Janji Jiwa\`
 
 *2. Catat Pemasukan:*
-• \`+gaji 4jt\`
+• \`+gaji 4.1jt\`
 • \`+pemasukan 500rb booster\`
 
 *3. Kirim Foto Struk / M-Banking:*
@@ -286,11 +286,11 @@ router.post('/webhook', async (req, res) => {
 • \`alokasi\` (panduan alokasi gajian Tgl 21 & Tgl 1)
 • \`budget\` (cek kuota & sisa hari dalam siklus gajian)
 • \`set budget bensin 250rb\` (ubah limit anggaran)
-• \`reset budget\` (kembalikan ke default Rp 4.500.000)
+• \`reset budget\` (kembalikan ke default Rp 4.600.000)
 
 *5. Pengingat & Simulasi:*
 • \`simulasi pengingat malam\` (tes notifikasi jam 22:30)
-• \`simulasi gaji 21\` (tes pencatatan gaji pokok 4jt)
+• \`simulasi gaji 21\` (tes pencatatan gaji pokok 4,1jt)
 • \`simulasi gaji 1\` (tes pencatatan booster 500k)
 
 *6. Cek Rekap & Laporan:*
@@ -318,9 +318,9 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, guide);
       }
 
-      // 2d. SIMULASI / TRIGGER GAJI TGL 21 (4 JT)
+      // 2d. SIMULASI / TRIGGER GAJI TGL 21 (4.1 JT)
       if (parsed.action === 'trigger_salary_21') {
-        await sendWhatsAppMessage(from, '⏳ Memproses pencatatan/simulasi Gaji Pokok Tgl 21 (Rp 4.000.000)...');
+        await sendWhatsAppMessage(from, '⏳ Memproses pencatatan/simulasi Gaji Pokok Tgl 21 (Rp 4.100.000)...');
         await executeSalary21(userNumber, true);
         return;
       }
@@ -355,19 +355,19 @@ router.post('/webhook', async (req, res) => {
           `🔄 *DATA KEUANGAN BERHASIL DI-RESTART!*\n\n` +
           `• 🗑️ *Total Transaksi Dihapus:* ${count} transaksi\n` +
           `• 💰 *Saldo Kas Sekarang:* Rp 0\n` +
-          `• 🎯 *Alokasi Anggaran:* Di-reset ke standar Rp 4.500.000\n\n` +
+          `• 🎯 *Alokasi Anggaran:* Di-reset ke standar Rp 4.600.000\n\n` +
           `Buku kas Anda sekarang telah bersih dan siap digunakan dari awal.\n` +
           `_Ketik 'budget' untuk cek kuota atau mulai catat pengeluaran baru Anda!_`;
 
         return await sendWhatsAppMessage(from, reply);
       }
 
-      // 2h. RESET ANGGARAN KE STANDAR RP 4.500.000
+      // 2h. RESET ANGGARAN KE STANDAR RP 4.600.000
       if (parsed.action === 'reset_budget') {
         await syncDefaultBudgets(userNumber);
         const reply =
           `✅ *Anggaran Berhasil Di-Reset ke Standar Alokasi!*\n\n` +
-          `Total Anggaran: *Rp 4.500.000* (Gaji Pokok 4jt + Booster 500k).\n\n` +
+          `Total Anggaran: *Rp 4.600.000* (Gaji Pokok 4,1jt + Booster 500k).\n\n` +
           `_Ketik *budget* untuk melihat seluruh batas kuota._`;
         return await sendWhatsAppMessage(from, reply);
       }

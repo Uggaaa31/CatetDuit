@@ -1,9 +1,9 @@
 const prisma = require('../db');
 const dayjs = require('dayjs');
 
-// Total Anggaran Bulanan: Rp 4.500.000 (Gaji Tgl 21: 4jt + Booster Tgl 1: 500k)
+// Total Anggaran Bulanan: Rp 4.600.000 (Gaji Tgl 21: 4,1jt + Booster Tgl 1: 500k)
 const DEFAULT_BUDGETS = {
-  'Makanan & Minuman': 1400000,
+  'Makanan & Minuman': 1500000,
   'Rokok & Vape': 400000,
   'Bensin & Transportasi': 200000,
   'Kuota & Internet': 100000,
@@ -255,7 +255,7 @@ function getDualCycleGuide() {
     `🗓️ *Siklus Aktif:* ${cycle.label}\n` +
     `⏳ *Sisa Waktu:* ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *1. TANGGAL 21 — MASUK RP 4.000.000*\n` +
+    `💰 *1. TANGGAL 21 — MASUK RP 4.100.000*\n` +
     `_Fase Kebutuhan Pokok, Kewajiban & Tabungan:_\n` +
     `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Langsung pisahkan)\n` +
     `• 🛡️ *Dana Darurat:* Rp 500.000 (Kunci di bank digital)\n` +
@@ -264,18 +264,18 @@ function getDualCycleGuide() {
     `• 🛒 *Belanja Bulanan:* Rp 400.000 (Sabun & sembako)\n` +
     `• 📶 *Kuota & Internet:* Rp 100.000\n` +
     `• ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `• 🍚 *Uang Makan (Modal Awal):* Rp 1.100.000 (Jatah harian ~Rp 46.000/hari)\n` +
+    `• 🍚 *Uang Makan (Modal Awal):* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
     `• 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `💵 *2. TANGGAL 1 — MASUK RP 500.000*\n` +
     `_Fase Penguat Operasional (Tgl 1 s/d 20):_\n` +
     `• ⛽ *Bensin & Transportasi:* Rp 200.000\n` +
-    `• 🍚 *Tambahan Uang Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.400.000 sebulan)\n\n` +
+    `• 🍚 *Tambahan Uang Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 / Rp 50.000 per hari)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🤖 *AUTOMATION BOT:*\n` +
-    `• Setiap Tgl 21 jam 08:00 bot otomatis catat +Rp 4.000.000\n` +
+    `• Setiap Tgl 21 jam 08:00 bot otomatis catat +Rp 4.100.000\n` +
     `• Setiap Tgl 1 jam 08:00 bot otomatis catat +Rp 500.000\n` +
-    `• Ketik \`simulasi gaji 21\` untuk uji coba catat gaji 4jt sekarang\n` +
+    `• Ketik \`simulasi gaji 21\` untuk uji coba catat gaji 4,1jt sekarang\n` +
     `• Ketik \`simulasi gaji 1\` untuk uji coba catat booster 500k sekarang\n` +
     `• Ketik \`budget\` untuk melihat sisa kuota dan jatah harian.`
   );
