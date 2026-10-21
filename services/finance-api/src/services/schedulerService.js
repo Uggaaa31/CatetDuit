@@ -5,6 +5,7 @@ const { sendWhatsAppMessage } = require('./waClient');
 
 const BOT_NUMBERS = ['62881081881341', '227087872991280'];
 const sentNightlyReminders = new Set();
+const sentAllocationReminders22 = new Set();
 
 function isRealPhoneNumber(str) {
   if (!str) return false;
@@ -169,16 +170,16 @@ async function executeSalary21(userNumber, isManual = false) {
     `🗓️ *${cycle.label}*\n\n` +
     `Bot telah otomatis mencatat pemasukan Rp 4.100.000 ke pembukuan Anda.\n\n` +
     `📋 *CHECKLIST ALOKASI HARI INI (Langsung Pisahkan!):*\n` +
-    `1. 🔒 *Tabungan & Investasi:* Rp 300.000 (Pindah ke Bank Digital/Bibit)\n` +
-    `2. 🛡️ *Dana Darurat:* Rp 500.000 (Kunci di kantong terkunci)\n` +
-    `3. 👨‍👩‍👧 *Kirim Keluarga:* Rp 400.000 (Langsung transfer)\n` +
-    `4. 💡 *Listrik, Air & Wifi:* Rp 400.000 (Bayar tagihan)\n` +
-    `5. 🛒 *Belanja Bulanan:* Rp 400.000 (Kebutuhan pokok & rumah)\n` +
-    `6. 📶 *Kuota & Internet:* Rp 100.000\n` +
-    `7. ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `8. 🍚 *Uang Makan (Modal Awal):* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
-    `9. 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
-    `💡 *Tips:* Amankan tabungan & bayar kewajiban di awal agar tidak habis terpakai!\n` +
+    `1. 🔒 *Tabungan & Investasi:* Rp 300.000 (Pindah ke SeaBank)\n` +
+    `2. 🛡️ *Dana Darurat:* Rp 500.000 (Pindah ke SeaBank - Bunga Harian)\n` +
+    `3. 👨‍👩‍👧 *Kirim Keluarga:* Rp 400.000 (Dompet Bank Jago ➔ Transfer ortu)\n` +
+    `4. 💡 *Listrik, Air & Wifi:* Rp 400.000 (Dompet Bank Jago ➔ Bayar tagihan)\n` +
+    `5. 🛒 *Belanja Bulanan:* Rp 400.000 (Dompet Bank Jago ➔ Sabun & sembako)\n` +
+    `6. 📶 *Kuota & Internet:* Rp 100.000 (Dompet Bank Jago ➔ Paket data)\n` +
+    `7. ☕ *Nongkrong & Hiburan:* Rp 400.000 (Dompet Bank Jago)\n` +
+    `8. 🍚 *Uang Makan (Modal Awal):* Rp 1.200.000 (Dompet Bank Jago ~Rp 50.000/hari)\n` +
+    `9. 🚬 *Rokok & Vape:* Rp 400.000 (Dompet Bank Jago - Jatah 1 bulan)\n\n` +
+    `💡 *Info:* Besok (Tgl 22) jam 08:00 bot otomatis mengirimkan rincian panduan transfer ke SeaBank & Bank Jago!\n` +
     `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
 
   try {
@@ -188,6 +189,50 @@ async function executeSalary21(userNumber, isManual = false) {
   }
 
   return { success: true, tx };
+}
+
+/**
+ * Pengingat Otomatis Pembagian Alokasi Perbankan (SeaBank & Bank Jago) setiap Tanggal 22 jam 08:00
+ */
+async function executeAllocationReminder22(userNumber, isManual = false) {
+  const cycle = getPayCycleRange();
+
+  const message =
+    `📋 *PENGINGAT ALOKASI GAJI (TANGGAL 22)*\n` +
+    `🗓️ *Siklus:* ${cycle.label}\n\n` +
+    `Halo Bro! Gaji Rp 4.100.000 kemarin (Tgl 21) sudah masuk di rekening *BSI*.\n` +
+    `Hari ini saatnya eksekusi pembagian saldo ke *SeaBank* & *Bank Jago* agar tertata rapi dan zero-leak! 🚀\n\n` +
+    `═══════════════════════\n` +
+    `1️⃣ *LANGKAH 1: DARI BSI PINDAHKAN KE SEABANK*\n` +
+    `💸 *Total Transfer:* Rp 800.000\n` +
+    `• 🔒 *Tabungan & Investasi:* Rp 300.000\n` +
+    `• 🛡️ *Dana Darurat:* Rp 500.000\n` +
+    `_(Biarkan mengendap di SeaBank agar berbunga harian 3.75-5% & terkunci aman)_\n\n` +
+    `═══════════════════════\n` +
+    `2️⃣ *LANGKAH 2: DARI BSI PINDAHKAN KE BANK JAGO*\n` +
+    `💸 *Total Transfer:* Rp 3.300.000\n` +
+    `_Masukkan ke Kantong-Kantong Jago:_\n` +
+    `• 👨‍👩‍👧 *Kantong Kirim Ortu:* Rp 400.000 ➔ _Langsung transfer ke orang tua (gratis BI-Fast)_\n` +
+    `• 💡 *Kantong Listrik, Air & Wifi:* Rp 400.000 ➔ _Langsung bayar tagihan bulanan_\n` +
+    `• 📶 *Kantong Kuota & Internet:* Rp 100.000 ➔ _Langsung isi paket data_\n` +
+    `• 🛒 *Kantong Belanja Sembako:* Rp 400.000 ➔ _Beras, telur, minyak, sabun/odol_\n` +
+    `• 🍚 *Kantong Uang Makan:* Rp 1.200.000 ➔ _Jatah aman Rp 50.000/hari_\n` +
+    `• 🚬 *Kantong Rokok & Vape:* Rp 400.000 ➔ _Jatah 1 bulan penuh_\n` +
+    `• ☕ *Kantong Nongkrong & Kopi:* Rp 400.000 ➔ _Jajan & refreshing akhir pekan_\n\n` +
+    `═══════════════════════\n` +
+    `3️⃣ *HASIL AKHIR:*\n` +
+    `• 🏦 *Saldo BSI:* Rp 0 (Aman, tidak tergesek belanja tanpa sadar)\n` +
+    `• 👨‍👩‍👧 *Kewajiban Ortu & Tagihan:* Sudah beres di awal siklus\n` +
+    `• 🍚 *Uang Makan & Operasional:* Tertata rapi di kantong Jago masing-masing\n\n` +
+    `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
+
+  try {
+    await sendWhatsAppMessage(userNumber, message);
+  } catch (err) {
+    console.error(`[scheduler] Gagal kirim pengingat alokasi 22 ke ${userNumber}:`, err.message);
+  }
+
+  return { success: true };
 }
 
 /**
@@ -347,7 +392,19 @@ function startRecurringScheduler() {
         }
       }
 
-      // 2. Eksekusi Pengingat Malam Hari Otomatis jam 22:30 malam (rentang 22:30 - 22:40)
+      // 2. Eksekusi Pengingat Alokasi Bank (SeaBank & Bank Jago) setiap Tgl 22 jam 08:00 pagi
+      if (date === 22 && hour >= 8 && hour <= 10) {
+        const todayStr = now.format('YYYY-MM-DD');
+        for (const userNumber of users) {
+          const key = `${userNumber}_alokasi_${todayStr}`;
+          if (!sentAllocationReminders22.has(key)) {
+            await executeAllocationReminder22(userNumber, false);
+            sentAllocationReminders22.add(key);
+          }
+        }
+      }
+
+      // 3. Eksekusi Pengingat Malam Hari Otomatis jam 22:30 malam (rentang 22:30 - 22:40)
       if (hour === 22 && minute >= 30 && minute <= 40) {
         const todayStr = now.format('YYYY-MM-DD');
         for (const userNumber of users) {
@@ -375,5 +432,6 @@ module.exports = {
   executeSalary21,
   executeBooster1,
   executeNightlyReminder,
+  executeAllocationReminder22,
   startRecurringScheduler,
 };

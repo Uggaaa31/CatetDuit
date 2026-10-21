@@ -255,28 +255,30 @@ function getDualCycleGuide() {
     `🗓️ *Siklus Aktif:* ${cycle.label}\n` +
     `⏳ *Sisa Waktu:* ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *1. TANGGAL 21 — MASUK RP 4.100.000*\n` +
-    `_Fase Kebutuhan Pokok, Kewajiban & Tabungan:_\n` +
-    `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Langsung pisahkan)\n` +
-    `• 🛡️ *Dana Darurat:* Rp 500.000 (Kunci di bank digital)\n` +
-    `• 👨‍👩‍👧 *Kirim Keluarga:* Rp 400.000\n` +
-    `• 💡 *Listrik, Air & Wifi:* Rp 400.000 (Bayar tagihan)\n` +
-    `• 🛒 *Belanja Bulanan:* Rp 400.000 (Sabun & sembako)\n` +
-    `• 📶 *Kuota & Internet:* Rp 100.000\n` +
-    `• ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `• 🍚 *Uang Makan (Modal Awal):* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
-    `• 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
+    `💰 *1. TANGGAL 21 — MASUK RP 4.100.000 (DI BSI)*\n` +
+    `_Pindahkan Segera (Tgl 21–22) ke 2 Bank Tujuan:_\n\n` +
+    `🟠 *A. PINDAH KE SEABANK (Total Rp 800.000 — Aset Dingin):*\n` +
+    `• 🔒 *Tabungan & Investasi:* Rp 300.000\n` +
+    `• 🛡️ *Dana Darurat:* Rp 500.000 (Bunga harian & terkunci aman)\n\n` +
+    `🟣 *B. PINDAH KE BANK JAGO (Total Rp 3.300.000 — Masuk ke Kantong):*\n` +
+    `• 👨‍👩‍👧 *Kantong Kirim Ortu:* Rp 400.000 (Langsung transfer ke ortu)\n` +
+    `• 💡 *Kantong Listrik, Air & Wifi:* Rp 400.000 (Bayar tagihan)\n` +
+    `• 📶 *Kantong Kuota & Internet:* Rp 100.000 (Beli paket data)\n` +
+    `• 🛒 *Kantong Belanja Sembako:* Rp 400.000 (Sabun & sembako)\n` +
+    `• 🍚 *Kantong Uang Makan:* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
+    `• 🚬 *Kantong Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n` +
+    `• ☕ *Kantong Nongkrong & Hiburan:* Rp 400.000 (Ngopi/refreshing)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💵 *2. TANGGAL 1 — MASUK RP 500.000*\n` +
-    `_Fase Penguat Operasional (Tgl 1 s/d 20):_\n` +
-    `• ⛽ *Bensin & Transportasi:* Rp 200.000\n` +
-    `• 🍚 *Tambahan Uang Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 / Rp 50.000 per hari)\n\n` +
+    `💵 *2. TANGGAL 1 — MASUK RP 500.000 (DI BSI)*\n` +
+    `_Langsung Pindah Semua ke Bank Jago:_\n` +
+    `• ⛽ *Kantong Bensin & Transport:* Rp 200.000\n` +
+    `• 🍚 *Tambahan Kantong Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 / Rp 50.000 per hari)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🤖 *AUTOMATION BOT:*\n` +
     `• Setiap Tgl 21 jam 08:00 bot otomatis catat +Rp 4.100.000\n` +
+    `• Setiap Tgl 22 jam 08:00 bot otomatis kirim Pengingat Alokasi Bank (SeaBank & Jago)\n` +
     `• Setiap Tgl 1 jam 08:00 bot otomatis catat +Rp 500.000\n` +
-    `• Ketik \`simulasi gaji 21\` untuk uji coba catat gaji 4,1jt sekarang\n` +
-    `• Ketik \`simulasi gaji 1\` untuk uji coba catat booster 500k sekarang\n` +
+    `• Ketik \`simulasi alokasi 22\` untuk tes notifikasi alokasi sekarang\n` +
     `• Ketik \`budget\` untuk melihat sisa kuota dan jatah harian.`
   );
 }

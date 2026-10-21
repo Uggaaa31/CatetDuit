@@ -253,6 +253,20 @@ function parseMessage(rawText) {
   }
 
   if (
+    lower === 'simulasi alokasi 22' ||
+    lower === 'alokasi 22' ||
+    lower === 'simulasi alokasi' ||
+    lower === 'tes alokasi' ||
+    lower === 'pengingat alokasi' ||
+    lower === 'reminder alokasi' ||
+    lower === 'notifikasi 22' ||
+    lower === 'reminder 22' ||
+    lower === 'jadwal alokasi'
+  ) {
+    return { isCommand: true, action: 'trigger_allocation_reminder_22' };
+  }
+
+  if (
     lower === 'simulasi gaji 21' ||
     lower === 'trigger gaji 21' ||
     lower === 'catat gaji 21' ||

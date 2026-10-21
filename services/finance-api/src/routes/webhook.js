@@ -18,6 +18,7 @@ const {
   executeSalary21,
   executeBooster1,
   executeNightlyReminder,
+  executeAllocationReminder22,
 } = require('../services/schedulerService');
 const dayjs = require('dayjs');
 
@@ -290,6 +291,7 @@ router.post('/webhook', async (req, res) => {
 
 *5. Pengingat & Simulasi:*
 • \`simulasi pengingat malam\` (tes notifikasi jam 22:30)
+• \`simulasi alokasi 22\` (tes reminder alokasi SeaBank & Jago Tgl 22)
 • \`simulasi gaji 21\` (tes pencatatan gaji pokok 4,1jt)
 • \`simulasi gaji 1\` (tes pencatatan booster 500k)
 
@@ -316,6 +318,13 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'allocation_guide') {
         const guide = getDualCycleGuide();
         return await sendWhatsAppMessage(from, guide);
+      }
+
+      // 2c-2. SIMULASI / TRIGGER PENGINGAT ALOKASI TGL 22
+      if (parsed.action === 'trigger_allocation_reminder_22') {
+        await sendWhatsAppMessage(from, '⏳ Menjalankan pengingat alokasi perbankan Tanggal 22 (SeaBank & Bank Jago)...');
+        await executeAllocationReminder22(userNumber, true);
+        return;
       }
 
       // 2d. SIMULASI / TRIGGER GAJI TGL 21 (4.1 JT)
