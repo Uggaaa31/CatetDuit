@@ -6,20 +6,81 @@ const { sendWhatsAppMessage } = require('./waClient');
 const BOT_NUMBERS = ['62881081881341', '227087872991280'];
 const sentNightlyReminders = new Set();
 
+function isRealPhoneNumber(str) {
+  if (!str) return false;
+  const clean = str.replace(/[^0-9]/g, '');
+  // Nomor HP reguler Indonesia diawali 62 atau 08, panjang 10-15 digit
+  // WhatsApp LID biasanya 14+ digit tetapi tidak diawali 62/08 (misal 157075..., 22708...)
+  return (clean.startsWith('62') || clean.startsWith('08')) && clean.length >= 10 && clean.length <= 15;
+}
+
+function normalizePhoneNumber(str) {
+  if (!str) return '';
+  let clean = str.replace(/[^0-9]/g, '');
+  if (clean.startsWith('08')) {
+    clean = '62' + clean.slice(1);
+  }
+  return clean;
+}
+
+/**
+ * Otomatis konsolidasi data transaksi yang tersimpan di bawah LID ke nomor HP utama
+ */
+async function consolidateLidRecords() {
+  try {
+    const canonical = '6281341185188';
+    const result = await prisma.transaction.updateMany({
+      where: {
+        userNumber: {
+          in: ['15707500732532', '227087872991280'],
+        },
+      },
+      data: {
+        userNumber: canonical,
+      },
+    });
+    if (result.count > 0) {
+      console.log(`[scheduler] Berhasil mengonsolidasi ${result.count} transaksi dari LID ke nomor telepon utama ${canonical}`);
+    }
+
+    // Bersihkan budget duplikat LID jika ada
+    await prisma.budget.deleteMany({
+      where: {
+        userNumber: {
+          in: ['15707500732532', '227087872991280'],
+        },
+      },
+    });
+  } catch (err) {
+    console.warn('[scheduler] Catatan migrasi LID DB:', err.message);
+  }
+}
+
 /**
  * Mendapatkan daftar user WhatsApp aktif untuk dikirimi notifikasi automasi
+ * HANYA nomor HP valid (@s.whatsapp.net), TIDAK PERNAH mengirim pesan terjadwal ke @lid
  */
 async function getTargetUserNumbers() {
   const targets = new Set();
 
+  // 1. Ambil nomor dari ALLOWED_NUMBERS env (hanya nomor HP valid, bukan LID / BOT)
+  const allowed = (process.env.ALLOWED_NUMBERS || '')
+    .split(',')
+    .map((n) => n.trim().replace(/[^0-9]/g, ''))
+    .filter((n) => isRealPhoneNumber(n) && !BOT_NUMBERS.includes(n))
+    .map(normalizePhoneNumber);
+
+  allowed.forEach((n) => targets.add(n));
+
+  // 2. Ambil dari DB hanya jika berupa nomor HP valid
   try {
     const txUsers = await prisma.transaction.findMany({
       select: { userNumber: true },
       distinct: ['userNumber'],
     });
     txUsers.forEach((u) => {
-      if (u.userNumber && !BOT_NUMBERS.includes(u.userNumber)) {
-        targets.add(u.userNumber);
+      if (u.userNumber && isRealPhoneNumber(u.userNumber) && !BOT_NUMBERS.includes(u.userNumber)) {
+        targets.add(normalizePhoneNumber(u.userNumber));
       }
     });
 
@@ -28,23 +89,15 @@ async function getTargetUserNumbers() {
       distinct: ['userNumber'],
     });
     budgetUsers.forEach((b) => {
-      if (b.userNumber && !BOT_NUMBERS.includes(b.userNumber)) {
-        targets.add(b.userNumber);
+      if (b.userNumber && isRealPhoneNumber(b.userNumber) && !BOT_NUMBERS.includes(b.userNumber)) {
+        targets.add(normalizePhoneNumber(b.userNumber));
       }
     });
   } catch (err) {
     console.error('[scheduler] Gagal mengambil nomor dari DB:', err.message);
   }
 
-  // Tambahkan nomor dari ALLOWED_NUMBERS env
-  const allowed = (process.env.ALLOWED_NUMBERS || '')
-    .split(',')
-    .map((n) => n.trim().replace(/[^0-9]/g, ''))
-    .filter((n) => n && !BOT_NUMBERS.includes(n));
-
-  allowed.forEach((n) => targets.add(n));
-
-  // Fallback default nomor pengguna utama jika env kosong
+  // 3. Fallback default nomor pengguna utama jika kosong
   if (targets.size === 0) {
     targets.add('6281341185188');
   }
@@ -244,6 +297,9 @@ async function executeNightlyReminder(userNumber, isManual = false) {
  */
 function startRecurringScheduler() {
   console.log('⏰ [scheduler] Layanan Automasi Gaji Terjadwal (Tgl 21 & Tgl 1) & Pengingat Malam (22:30) telah aktif.');
+
+  // Jalankan konsolidasi LID ke nomor utama saat servis pertama menyala
+  consolidateLidRecords();
 
   async function checkAndRun() {
     const now = dayjs();

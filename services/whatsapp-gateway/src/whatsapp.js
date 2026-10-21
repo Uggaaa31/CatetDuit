@@ -18,6 +18,21 @@ let currentQRImage = null;
 let isConnected = false;
 let connectedUser = null;
 
+// Cache untuk E2EE Retry Decryption (Mencegah "Waiting for this message")
+const messageStore = new Map();
+const retryMap = new Map();
+const msgRetryCounterCache = {
+  get: (k) => retryMap.get(k),
+  set: (k, v) => {
+    retryMap.set(k, v);
+    if (retryMap.size > 2000) {
+      const oldestKey = retryMap.keys().next().value;
+      retryMap.delete(oldestKey);
+    }
+  },
+  del: (k) => retryMap.delete(k),
+};
+
 const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, '../auth_info');
 const MEDIA_DIR = process.env.MEDIA_DIR || path.join(__dirname, '../media');
 const FINANCE_API_URL = process.env.FINANCE_API_URL || 'http://finance-api:3000';
@@ -67,6 +82,13 @@ async function connectToWhatsApp() {
     browser: Browsers.ubuntu('Chrome'),
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
+    msgRetryCounterCache,
+    getMessage: async (key) => {
+      if (key?.id && messageStore.has(key.id)) {
+        return messageStore.get(key.id);
+      }
+      return undefined;
+    },
   });
 
   sock.ev.on('connection.update', async (update) => {
@@ -145,6 +167,15 @@ async function connectToWhatsApp() {
 
       const messageContent = msg.message;
       if (!messageContent) continue;
+
+      // Simpan payload pesan untuk handling E2EE retry
+      if (msg.key?.id) {
+        messageStore.set(msg.key.id, messageContent);
+        if (messageStore.size > 2000) {
+          const oldestKey = messageStore.keys().next().value;
+          messageStore.delete(oldestKey);
+        }
+      }
 
       try {
         let text = '';
@@ -229,7 +260,15 @@ async function sendTextMessage(to, text) {
     jid = clean.length >= 14 && !clean.startsWith('62') ? `${clean}@lid` : `${clean}@s.whatsapp.net`;
   }
   console.log(`[whatsapp-gateway] Mengirim pesan ke: ${jid}`);
-  return await sock.sendMessage(jid, { text });
+  const result = await sock.sendMessage(jid, { text });
+  if (result?.key?.id && result?.message) {
+    messageStore.set(result.key.id, result.message);
+    if (messageStore.size > 2000) {
+      const oldestKey = messageStore.keys().next().value;
+      messageStore.delete(oldestKey);
+    }
+  }
+  return result;
 }
 
 async function sendDocumentMessage(to, filePath, fileName, caption = '') {
@@ -244,12 +283,20 @@ async function sendDocumentMessage(to, filePath, fileName, caption = '') {
   const fileBuffer = fs.readFileSync(filePath);
 
   console.log(`[whatsapp-gateway] Mengirim dokumen ke: ${jid}`);
-  return await sock.sendMessage(jid, {
+  const result = await sock.sendMessage(jid, {
     document: fileBuffer,
     fileName: fileName || path.basename(filePath),
     mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     caption,
   });
+  if (result?.key?.id && result?.message) {
+    messageStore.set(result.key.id, result.message);
+    if (messageStore.size > 2000) {
+      const oldestKey = messageStore.keys().next().value;
+      messageStore.delete(oldestKey);
+    }
+  }
+  return result;
 }
 
 function getStatus() {

@@ -60,6 +60,45 @@ function getPeriodRange(period) {
   };
 }
 
+const BOT_NUMBERS = ['62881081881341', '227087872991280'];
+
+function isRealPhoneNumber(str) {
+  if (!str) return false;
+  const clean = str.replace(/[^0-9]/g, '');
+  return (clean.startsWith('62') || clean.startsWith('08')) && clean.length >= 10 && clean.length <= 15;
+}
+
+function normalizePhoneNumber(str) {
+  if (!str) return '';
+  let clean = str.replace(/[^0-9]/g, '');
+  if (clean.startsWith('08')) {
+    clean = '62' + clean.slice(1);
+  }
+  return clean;
+}
+
+function getCanonicalUserNumber(from) {
+  if (!from) return '6281341185188';
+  const clean = from.split('@')[0].replace(/[^0-9]/g, '');
+
+  if (isRealPhoneNumber(clean)) {
+    return normalizePhoneNumber(clean);
+  }
+
+  // Jika sender adalah LID (seperti 15707500732532), petakan ke nomor telepon asli user dari ALLOWED_NUMBERS
+  const allowedPhones = (process.env.ALLOWED_NUMBERS || '')
+    .split(',')
+    .map((n) => n.trim().replace(/[^0-9]/g, ''))
+    .filter((n) => isRealPhoneNumber(n) && !BOT_NUMBERS.includes(n))
+    .map(normalizePhoneNumber);
+
+  if (allowedPhones.length > 0) {
+    return allowedPhones[0];
+  }
+
+  return '6281341185188';
+}
+
 function isAllowedSender(from) {
   if (!from) return false;
   // Tolak SEMUA pesan grup WhatsApp
@@ -91,7 +130,8 @@ router.post('/webhook', async (req, res) => {
     return;
   }
 
-  const userNumber = from.replace(/[^0-9]/g, '');
+  // userNumber dinormalisasi secara kanonikal ke nomor telepon utama untuk database
+  const userNumber = getCanonicalUserNumber(from);
 
   try {
     // 1. JIKA PESAN BERUPA FOTO STRUK ATAU RESI M-BANKING
