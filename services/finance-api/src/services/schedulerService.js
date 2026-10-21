@@ -152,7 +152,7 @@ async function executeSalary21(userNumber, isManual = false) {
     `5. 🛒 *Belanja Bulanan:* Rp 400.000 (Kebutuhan pokok & rumah)\n` +
     `6. 📶 *Kuota & Internet:* Rp 100.000\n` +
     `7. ☕ *Nongkrong & Hiburan:* Rp 400.000\n` +
-    `8. 🍚 *Uang Makan Fase 1 (Tgl 21-31):* Rp 1.100.000 (~Rp 100.000/hari)\n` +
+    `8. 🍚 *Uang Makan (Modal Awal):* Rp 1.100.000 (Jatah harian ~Rp 46.000/hari)\n` +
     `9. 🚬 *Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n\n` +
     `💡 *Tips:* Amankan tabungan & bayar kewajiban di awal agar tidak habis terpakai!\n` +
     `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
@@ -209,7 +209,7 @@ async function executeBooster1(userNumber, isManual = false) {
     `Bot telah otomatis mencatat pemasukan Rp 500.000 ke pembukuan.\n\n` +
     `📋 *REKOMENDASI ALOKASI:*` +
     `\n• ⛽ *Bensin & Transportasi:* Rp 200.000` +
-    `\n• 🍚 *Tambahan Uang Makan Fase 2 (Tgl 1-20):* Rp 300.000\n\n` +
+    `\n• 🍚 *Tambahan Uang Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.400.000 sebulan)\n\n` +
     `⏳ *Sisa ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}!*\n` +
     `_Ketik \`budget\` untuk melihat sisa kuota belanja Anda saat ini._`;
 
