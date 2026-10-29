@@ -585,10 +585,39 @@ function parseMessage(rawText) {
   return { isCommand: false, isTransaction: false, rawText: text };
 }
 
+function isConversationalText(rawText) {
+  if (!rawText || typeof rawText !== 'string') return false;
+  const text = rawText.trim().toLowerCase();
+
+  const conversationalKeywords = [
+    'tadi', 'kemarin', 'kemaren', 'barusan', 'abis', 'habis', 'lagi',
+    'gue', 'gw', 'aku', 'saya', 'kita', 'kami', 'lu', 'kamu', 'doi',
+    'terus', 'lalu', 'sekalian', 'mampir', 'bareng', 'sama',
+    'dong', 'deh', 'sih', 'nih', 'tuh', 'ya', 'kan',
+    'halo', 'hai', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum',
+    'gimana', 'bagaimana', 'kenapa', 'mengapa', 'berapa', 'kira-kira',
+    'bisa', 'tolong', 'bantu', 'makasih', 'terima kasih',
+    'nongki', 'ngopi', 'curhat', 'beliin', 'kirimin', 'transferin'
+  ];
+
+  const words = text.split(/\s+/).filter(Boolean);
+
+  const hasConvWord = words.some((w) => conversationalKeywords.includes(w.replace(/[^a-z]/g, '')));
+  if (hasConvWord) return true;
+
+  if (words.length >= 5 && !text.includes(',')) return true;
+
+  if (text.includes('?')) return true;
+
+  return false;
+}
+
 module.exports = {
   parseMessage,
   parseNominal,
   detectCategory,
   extractTransactionItems,
   CATEGORY_KEYWORDS,
+  isConversationalText,
 };
+

@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../db');
-const { parseMessage } = require('../services/nlpParser');
+const { parseMessage, isConversationalText } = require('../services/nlpParser');
 const { sendWhatsAppMessage, sendWhatsAppDocument } = require('../services/waClient');
-const { extractReceiptData } = require('../services/ocrClient');
+const { extractReceiptData, parseChatWithAI } = require('../services/ocrClient');
 const { generateFinancialExcel } = require('../services/excelService');
 const {
   checkBudgetStatus,
@@ -79,6 +79,215 @@ function isAllowedSender(from) {
 
   const clean = from.split('@')[0].replace(/[^0-9]/g, '');
   return allowed.includes(clean);
+}
+
+async function executeTransferOperation(userNumber, from, transferData) {
+  const { amount, fromBank, toTarget, category, transferType } = transferData;
+  const numAmount = parseFloat(amount) || 0;
+
+  // Kasus A: Alokasi Bundle ke SeaBank Rp 800.000 (Dana Darurat 500k + Tabungan 300k)
+  if (transferType === 'seabank_bundle' && (numAmount === 800000 || numAmount === 0)) {
+    const finalAmount = numAmount || 800000;
+    await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: 'expense',
+        source: 'transfer_seabank',
+        amount: 500000,
+        description: 'Alokasi Dana Darurat (SeaBank)',
+        category: 'Dana Darurat',
+      },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: 'expense',
+        source: 'transfer_seabank',
+        amount: 300000,
+        description: 'Alokasi Tabungan & Investasi (SeaBank)',
+        category: 'Tabungan',
+      },
+    });
+
+    const reply =
+      `🔄 *Alokasi ke SeaBank Berhasil Dicatat!*\n\n` +
+      `🏦 *Tujuan:* SeaBank (Uang Dingin Berbunga Harian)\n` +
+      `💰 *Total Transfer:* ${formatRupiah(finalAmount)}\n\n` +
+      `📋 *Rincian Alokasi Kantong:*\n` +
+      `• 🛡️ *Dana Darurat:* Rp 500.000 (Terkunci aman di SeaBank)\n` +
+      `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Aset bertumbuh)\n\n` +
+      `✅ Dana berhasil diamankan dari godaan belanja harian!\n` +
+      `_Ketik 'budget' untuk melihat status kuota tabungan Anda._`;
+
+    return await sendWhatsAppMessage(from, reply);
+  }
+
+  // Kasus B: Pemindahan Saldo Operasional Antar Bank (misal BSI ke Bank Jago)
+  if (transferType === 'bank_to_bank' || (toTarget && toTarget.toLowerCase().includes('jago'))) {
+    const reply =
+      `🔄 *Pemindahan Saldo Antar Bank Berhasil Dicatat!*\n\n` +
+      `🏦 *Dari Rekening:* ${fromBank || 'BSI'}\n` +
+      `🎯 *Ke Rekening:* ${toTarget || 'Bank Jago'}\n` +
+      `💰 *Nominal:* ${formatRupiah(numAmount)}\n\n` +
+      `✅ Uang operasional siap dialokasikan ke Kantong-Kantong Jago (Makan, Tagihan, Sembako, Ortu, Rokok).\n` +
+      `_Catatan: Pemindahan saldo antar bank ini tidak memotong kuota belanja harian._`;
+
+    return await sendWhatsAppMessage(from, reply);
+  }
+
+  // Kasus C: Alokasi ke Kantong Tertentu (Ortu, Dana Darurat, Tabungan, Makan, dll)
+  const targetCategory = category || 'Belanja Bulanan';
+  await prisma.transaction.create({
+    data: {
+      userNumber,
+      type: 'expense',
+      source: 'transfer_pocket',
+      amount: numAmount,
+      description: `Alokasi / Transfer ke ${toTarget || targetCategory}`,
+      category: targetCategory,
+    },
+  });
+
+  const budgetStatus = await checkBudgetStatus(userNumber, targetCategory);
+  let budgetNote = '';
+  if (budgetStatus.hasBudget) {
+    budgetNote = `\n📊 *Status Kantong ${targetCategory}:* Terpakai ${formatRupiah(budgetStatus.totalSpent)} / ${formatRupiah(budgetStatus.monthlyLimit)}`;
+  }
+
+  const reply =
+    `✅ *Alokasi ke Kantong Berhasil Dicatat!*\n\n` +
+    `🎯 *Tujuan:* ${toTarget || targetCategory}\n` +
+    `💰 *Nominal:* ${formatRupiah(numAmount)}\n` +
+    `🏷️ *Kategori:* ${targetCategory}\n` +
+    budgetNote +
+    `\n\n_Ketik 'budget' untuk melihat sisa seluruh kuota anggaran._`;
+
+  return await sendWhatsAppMessage(from, reply);
+}
+
+async function executeTransactionsOperation(userNumber, from, items, sourceLabel = 'manual', badgeText = '') {
+  if (!items || items.length === 0) return;
+
+  if (items.length === 1) {
+    const { type, amount, description, category, merchantName } = items[0];
+
+    const tx = await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: type || 'expense',
+        amount: parseFloat(amount) || 0,
+        description: description || 'Pengeluaran',
+        category: category || 'Makanan & Minuman',
+        merchantName: merchantName || null,
+        source: sourceLabel || 'manual',
+      },
+    });
+
+    const icon = tx.type === 'income' ? '💰' : '💸';
+    const label = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+
+    let reply =
+      `✅ *${label} Berhasil Dicatat!*\n\n` +
+      `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
+      `🏷️ *Kategori:* ${tx.category}\n` +
+      `📦 *Barang/Catatan:* ${tx.description}\n`;
+
+    if (tx.merchantName) {
+      reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
+    }
+
+    if (tx.type === 'expense') {
+      const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+      if (budgetStatus.hasBudget) {
+        if (budgetStatus.isOverbudget) {
+          reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+        } else if (budgetStatus.isWarning) {
+          reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+        } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+          reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
+        } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+          reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
+        }
+      }
+    }
+
+    if (badgeText) {
+      reply += `\n\n${badgeText}`;
+    }
+
+    reply += `\n\n_Ketik *batal* jika salah catat, atau *budget* untuk melihat sisa kuota._`;
+    return await sendWhatsAppMessage(from, reply);
+  }
+
+  // Multi-item
+  let totalExpense = 0;
+  let totalIncome = 0;
+  const createdTxs = [];
+
+  for (const item of items) {
+    const tx = await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: item.type || 'expense',
+        amount: parseFloat(item.amount) || 0,
+        description: item.description || 'Pengeluaran',
+        category: item.category || 'Makanan & Minuman',
+        merchantName: item.merchantName || null,
+        source: sourceLabel || 'manual_multi',
+      },
+    });
+    createdTxs.push(tx);
+    if (item.type === 'income') totalIncome += tx.amount;
+    else totalExpense += tx.amount;
+  }
+
+  let itemListText = '';
+  createdTxs.forEach((tx, idx) => {
+    const icon = tx.type === 'income' ? '💰' : '💸';
+    const merch = tx.merchantName ? ` (@${tx.merchantName})` : '';
+    itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)}\n`;
+  });
+
+  let summaryText = '';
+  if (totalExpense > 0 && totalIncome > 0) {
+    summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+  } else if (totalIncome > 0) {
+    summaryText = `💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+  } else {
+    summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}`;
+  }
+
+  let budgetAlerts = [];
+  const expenseCats = [...new Set(createdTxs.filter((t) => t.type === 'expense').map((t) => t.category))];
+  for (const cat of expenseCats) {
+    const budgetStatus = await checkBudgetStatus(userNumber, cat);
+    if (budgetStatus.hasBudget) {
+      if (budgetStatus.isOverbudget) {
+        budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+      } else if (budgetStatus.isWarning) {
+        budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+      } else if (cat === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
+        budgetAlerts.push(`💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari)`);
+      } else if (cat === 'Rokok & Vape' && budgetStatus.remaining > 0) {
+        budgetAlerts.push(`🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)}`);
+      }
+    }
+  }
+
+  const alertBlock = budgetAlerts.length > 0 ? `\n${budgetAlerts.join('\n')}\n` : '';
+  const badgeBlock = badgeText ? `\n${badgeText}\n` : '';
+
+  const reply =
+    `✅ *${createdTxs.length} Transaksi Berhasil Dicatat Sekaligus!*\n\n` +
+    itemListText +
+    `═══════════════════════\n` +
+    summaryText + '\n' +
+    alertBlock +
+    badgeBlock +
+    `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._`;
+
+  return await sendWhatsAppMessage(from, reply);
 }
 
 router.post('/webhook', async (req, res) => {
@@ -518,213 +727,83 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
-    // 2b. JIKA TRANSAKSI PEMINDAHAN / ALOKASI DANA ANTAR REKENING & KANTONG
-    if (parsed.isTransfer && parsed.data) {
-      const { amount, fromBank, toTarget, category, transferType } = parsed.data;
+    // 3. JIKA PESAN PERCAKAPAN ALAMI / BEBAS (CONVERSATIONAL TEXT)
+    // Jika user chat santai, cerita panjang, gaul, atau tanya saran -> proses via Gemini AI
+    const isConversational = isConversationalText(text);
 
-      // Kasus A: Alokasi Bundle ke SeaBank Rp 800.000 (Dana Darurat 500k + Tabungan 300k)
-      if (transferType === 'seabank_bundle' && amount === 800000) {
-        await prisma.transaction.create({
-          data: {
+    if (isConversational) {
+      console.log(`[webhook] Teks terdeteksi percakapan bebas/santai. Memproses via Gemini AI: "${text}"`);
+      const aiResult = await parseChatWithAI(text, senderName);
+
+      if (aiResult) {
+        // A. Transaksi Keuangan yang diekstrak oleh AI
+        if (aiResult.isFinancial && aiResult.transactions && aiResult.transactions.length > 0) {
+          return await executeTransactionsOperation(
             userNumber,
-            type: 'expense',
-            source: 'transfer_seabank',
-            amount: 500000,
-            description: 'Alokasi Dana Darurat (SeaBank)',
-            category: 'Dana Darurat',
-          },
-        });
+            from,
+            aiResult.transactions,
+            'gemini_chat',
+            '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
+          );
+        }
 
-        await prisma.transaction.create({
-          data: {
-            userNumber,
-            type: 'expense',
-            source: 'transfer_seabank',
-            amount: 300000,
-            description: 'Alokasi Tabungan & Investasi (SeaBank)',
-            category: 'Tabungan',
-          },
-        });
+        // B. Pemindahan Saldo / Transfer yang diekstrak oleh AI
+        if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
+          return await executeTransferOperation(userNumber, from, aiResult.transfer);
+        }
 
-        const reply =
-          `🔄 *Alokasi ke SeaBank Berhasil Dicatat!*\n\n` +
-          `🏦 *Tujuan:* SeaBank (Uang Dingin Berbunga Harian)\n` +
-          `💰 *Total Transfer:* ${formatRupiah(amount)}\n\n` +
-          `📋 *Rincian Alokasi Kantong:*\n` +
-          `• 🛡️ *Dana Darurat:* Rp 500.000 (Terkunci aman di SeaBank)\n` +
-          `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Aset bertumbuh)\n\n` +
-          `✅ Dana berhasil diamankan dari godaan belanja harian!\n` +
-          `_Ketik 'budget' untuk melihat status kuota tabungan Anda._`;
-
-        return await sendWhatsAppMessage(from, reply);
+        // C. Percakapan umum / Pertanyaan keuangan / Sapaan ramah
+        if (aiResult.friendlyResponse) {
+          return await sendWhatsAppMessage(from, aiResult.friendlyResponse);
+        }
       }
-
-      // Kasus B: Pemindahan Saldo Operasional Antar Bank (misal BSI ke Bank Jago)
-      if (transferType === 'bank_to_bank') {
-        const reply =
-          `🔄 *Pemindahan Saldo Antar Bank Berhasil Dicatat!*\n\n` +
-          `🏦 *Dari Rekening:* ${fromBank}\n` +
-          `🎯 *Ke Rekening:* ${toTarget}\n` +
-          `💰 *Nominal:* ${formatRupiah(amount)}\n\n` +
-          `✅ Uang operasional siap dialokasikan ke Kantong-Kantong Jago (Makan, Tagihan, Sembako, Ortu, Rokok).\n` +
-          `_Catatan: Pemindahan saldo antar bank ini tidak memotong kuota belanja harian._`;
-
-        return await sendWhatsAppMessage(from, reply);
-      }
-
-      // Kasus C: Alokasi ke Kantong Tertentu (Ortu, Dana Darurat, Tabungan, Makan, dll)
-      const tx = await prisma.transaction.create({
-        data: {
-          userNumber,
-          type: 'expense',
-          source: 'transfer_pocket',
-          amount,
-          description: `Alokasi / Transfer ke ${toTarget}`,
-          category,
-        },
-      });
-
-      const budgetStatus = await checkBudgetStatus(userNumber, category);
-      let budgetNote = '';
-      if (budgetStatus.hasBudget) {
-        budgetNote = `\n📊 *Status Kantong ${category}:* Terpakai ${formatRupiah(budgetStatus.totalSpent)} / ${formatRupiah(budgetStatus.monthlyLimit)}`;
-      }
-
-      const reply =
-        `✅ *Alokasi ke Kantong Berhasil Dicatat!*\n\n` +
-        `🎯 *Tujuan:* ${toTarget}\n` +
-        `💰 *Nominal:* ${formatRupiah(amount)}\n` +
-        `🏷️ *Kategori:* ${category}\n` +
-        budgetNote +
-        `\n\n_Ketik 'budget' untuk melihat sisa seluruh kuota anggaran._`;
-
-      return await sendWhatsAppMessage(from, reply);
     }
 
-    // 3. JIKA TRANSAKSI REGULER (Single Item atau Multi-Item Sekaligus)
+    // 4. JIKA BUKAN PERCAKAPAN BEBAS ATAU AI GAGAL / TIMEOUT:
+    // Gunakan Rule-Based NLP Parser untuk transaksi cepat & terstruktur
+    if (parsed.isTransfer && parsed.data) {
+      return await executeTransferOperation(userNumber, from, parsed.data);
+    }
+
     if (parsed.isTransaction) {
       const items = parsed.items || (parsed.data ? [parsed.data] : []);
-      if (items.length === 0) return;
-
-      // Kasus A: 1 Item Transaksi Tunggal
-      if (items.length === 1) {
-        const { type, amount, description, category, merchantName, source } = items[0];
-
-        const tx = await prisma.transaction.create({
-          data: {
-            userNumber,
-            type,
-            amount,
-            description,
-            category,
-            merchantName: merchantName || null,
-            source: source || 'manual',
-          },
-        });
-
-        const icon = type === 'income' ? '💰' : '💸';
-        const label = type === 'income' ? 'Pemasukan' : 'Pengeluaran';
-
-        let reply =
-          `✅ *${label} Berhasil Dicatat!*\n\n` +
-          `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
-          `🏷️ *Kategori:* ${tx.category}\n` +
-          `📦 *Barang/Catatan:* ${tx.description}\n`;
-
-        if (tx.merchantName) {
-          reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
-        }
-
-        // Cek Status Budget jika pengeluaran
-        if (type === 'expense') {
-          const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
-          if (budgetStatus.hasBudget) {
-            if (budgetStatus.isOverbudget) {
-              reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
-            } else if (budgetStatus.isWarning) {
-              reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
-            } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-              reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
-            } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-              reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
-            }
-          }
-        }
-
-        reply += `\n\n_Ketik *batal* jika salah catat, atau *budget* untuk melihat sisa kuota._`;
-        return await sendWhatsAppMessage(from, reply);
+      if (items.length > 0) {
+        return await executeTransactionsOperation(
+          userNumber,
+          from,
+          items,
+          items.length > 1 ? 'manual_multi' : 'manual'
+        );
       }
-
-      // Kasus B: Multi-Item Transaksi Sekaligus (contoh: "makan 25rb, es teh 5rb, parkir 2rb")
-      let totalExpense = 0;
-      let totalIncome = 0;
-      const createdTxs = [];
-
-      for (const item of items) {
-        const tx = await prisma.transaction.create({
-          data: {
-            userNumber,
-            type: item.type,
-            amount: item.amount,
-            description: item.description,
-            category: item.category,
-            merchantName: item.merchantName || null,
-            source: 'manual_multi',
-          },
-        });
-        createdTxs.push(tx);
-        if (item.type === 'income') totalIncome += item.amount;
-        else totalExpense += item.amount;
-      }
-
-      let itemListText = '';
-      createdTxs.forEach((tx, idx) => {
-        const icon = tx.type === 'income' ? '💰' : '💸';
-        const merch = tx.merchantName ? ` (@${tx.merchantName})` : '';
-        itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)}\n`;
-      });
-
-      let summaryText = '';
-      if (totalExpense > 0 && totalIncome > 0) {
-        summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
-      } else if (totalIncome > 0) {
-        summaryText = `💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
-      } else {
-        summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}`;
-      }
-
-      // Cek status anggaran untuk kategori-kategori yang terpengaruh
-      let budgetAlerts = [];
-      const expenseCats = [...new Set(createdTxs.filter((t) => t.type === 'expense').map((t) => t.category))];
-      for (const cat of expenseCats) {
-        const budgetStatus = await checkBudgetStatus(userNumber, cat);
-        if (budgetStatus.hasBudget) {
-          if (budgetStatus.isOverbudget) {
-            budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
-          } else if (budgetStatus.isWarning) {
-            budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
-          } else if (cat === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-            budgetAlerts.push(`💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari)`);
-          } else if (cat === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-            budgetAlerts.push(`🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)}`);
-          }
-        }
-      }
-
-      const alertBlock = budgetAlerts.length > 0 ? `\n${budgetAlerts.join('\n')}\n` : '';
-
-      const reply =
-        `✅ *${createdTxs.length} Transaksi Berhasil Dicatat Sekaligus!*\n\n` +
-        itemListText +
-        `═══════════════════════\n` +
-        summaryText + '\n' +
-        alertBlock +
-        `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._`;
-
-      return await sendWhatsAppMessage(from, reply);
     }
 
-    // 4. PESAN TIDAK DIKENALI
+    // 5. JIKA MASIH BELUM DIKENALI REGEX, COBA GEMINI AI SEBAGAI FALLBACK CERDAS
+    if (!isConversational) {
+      console.log(`[webhook] Mencoba fallback Gemini AI untuk teks tidak dikenal: "${text}"`);
+      const aiResult = await parseChatWithAI(text, senderName);
+
+      if (aiResult) {
+        if (aiResult.isFinancial && aiResult.transactions && aiResult.transactions.length > 0) {
+          return await executeTransactionsOperation(
+            userNumber,
+            from,
+            aiResult.transactions,
+            'gemini_chat',
+            '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
+          );
+        }
+
+        if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
+          return await executeTransferOperation(userNumber, from, aiResult.transfer);
+        }
+
+        if (aiResult.friendlyResponse) {
+          return await sendWhatsAppMessage(from, aiResult.friendlyResponse);
+        }
+      }
+    }
+
+    // 6. FORMAT PESAN TIDAK DIKENALI
     const unknownReply =
       `Halo *${senderName}*! Format pesan belum dikenali.\n\n` +
       `Contoh cepat:\n` +
@@ -736,6 +815,7 @@ router.post('/webhook', async (req, res) => {
       `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
       `• \`alokasi\` (panduan alokasi bank)\n` +
       `• Kirim foto struk belanja / m-banking\n\n` +
+      `💡 _Anda juga bisa curhat atau cerita pengeluaran bebas dengan bahasa santai, Gemini AI kami akan langsung memahaminya!_\n\n` +
       `Ketik *bantuan* untuk melihat semua menu.`;
 
     await sendWhatsAppMessage(from, unknownReply);

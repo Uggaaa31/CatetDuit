@@ -51,6 +51,7 @@ services:
       - DATABASE_URL=postgresql://${DB_USER:-finance_user}:${DB_PASSWORD:-finance_secret_pass}@postgres:5432/${DB_NAME:-finance_db}
       - WHATSAPP_GATEWAY_URL=${WHATSAPP_GATEWAY_URL:-http://whatsapp-gateway:3001}
       - OCR_SERVICE_URL=${OCR_SERVICE_URL:-http://ocr-service:8000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
       - PRIMARY_USER_NUMBER=${PRIMARY_USER_NUMBER}
       - BOT_NUMBERS=${BOT_NUMBERS}
