@@ -374,9 +374,31 @@ function parsePocketShift(rawText) {
   return null;
 }
 
+function extractCustomDate(text) {
+  if (!text) return null;
+  // Format: 'tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21-10-2026'
+  const match = text.match(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2})(?:\s*[-/]\s*([0-9]{1,2}))?(?:\s*[-/]\s*([0-9]{2,4}))?/i);
+  if (!match) return null;
+  const day = parseInt(match[1], 10);
+  if (day >= 1 && day <= 31) {
+    const now = new Date();
+    let month = now.getMonth();
+    let year = now.getFullYear();
+    if (match[2]) {
+      month = parseInt(match[2], 10) - 1;
+    }
+    if (match[3]) {
+      year = parseInt(match[3], 10);
+      if (year < 100) year += 2000;
+    }
+    return new Date(year, month, day, 12, 0, 0);
+  }
+  return null;
+}
+
 /**
  * Ekstrak item-item transaksi dari string teks
- * Mendukung single item maupun multi-item (dipisahkan baris baru, koma, atau kata hubung)
+ * Mendukung single item maupun multi-item (dipisahkan baris baru, koma non-desimal, atau kata hubung)
  */
 function extractTransactionItems(text) {
   let workingText = text.trim();
@@ -399,7 +421,29 @@ function extractTransactionItems(text) {
     }
   }
 
-  const nominalRegex = /(?:rp\.?\s*)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)/gi;
+  // 1. Lindungi tanggal, jam, dan kuantitas agar angkanya TIDAK dianggap sebagai uang/nominal
+  const protectedTokens = [];
+  function protect(val) {
+    const token = `__TOKEN_${protectedTokens.length}__`;
+    protectedTokens.push(val);
+    return token;
+  }
+
+  // Tanggal: 'pada tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21 okt'
+  workingText = workingText.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2}(?:\s*(?:[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?|[a-zA-Z]+))?)/gi, (m) => protect(m));
+
+  // Jam / waktu: 'jam 13:00', 'pukul 21'
+  workingText = workingText.replace(/(?:jam|pukul)\s*([0-9]{1,2}(?:[:.][0-9]{2})?)/gi, (m) => protect(m));
+
+  // Kuantitas: '2 porsi', '3 bungkus', '10 pcs'
+  workingText = workingText.replace(/([0-9]+)\s*(porsi|bungkus|buah|botol|kotak|gelas|butir|lembar|biji|pcs|pack|sachet|kaleng|piring)/gi, (m) => protect(m));
+
+  // Regex nominal yang akurat:
+  // 1. Ada simbol rp / idr
+  // 2. Ada suffix satuan: jt, juta, rb, ribu, k
+  // 3. Format ribuan bertitik: 50.000, 1.500.000
+  // 4. Angka polos minimal 3 digit (>= 100): 500, 2000, 25000 (bukan angka 1 digit/2 digit)
+  const nominalRegex = /(?:(?:rp\.?|idr)\s*[0-9]+(?:[.,][0-9]+)?(?:\s*(?:jt|juta|rb|ribu|k))?|[0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)|[0-9]{1,3}(?:\.[0-9]{3})+|\b[1-9][0-9]{2,}\b)/gi;
   const allNominalMatches = workingText.match(nominalRegex) || [];
 
   if (allNominalMatches.length === 0) {
@@ -412,8 +456,9 @@ function extractTransactionItems(text) {
   if (allNominalMatches.length > 1) {
     if (workingText.includes('\n')) {
       candidateChunks = workingText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    } else if (workingText.includes(',') || workingText.includes(';')) {
-      candidateChunks = workingText.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    } else if (workingText.includes(';') || /(?<!\d),(?!\d)/.test(workingText)) {
+      // Split koma HANYA jika bukan koma desimal (contoh '4,1 jt' komanya dilindungi)
+      candidateChunks = workingText.split(/(?<!\d),(?!\d)|;+/).map((s) => s.trim()).filter(Boolean);
     } else {
       candidateChunks = workingText.split(/\s+(?:dan|sama|plus|\+)\s+/i).map((s) => s.trim()).filter(Boolean);
     }
@@ -432,9 +477,18 @@ function extractTransactionItems(text) {
     candidateChunks = refinedChunks;
   }
 
+  function restoreTokens(str) {
+    let res = str;
+    for (let i = 0; i < protectedTokens.length; i++) {
+      res = res.replace(new RegExp(`__TOKEN_${i}__`, 'g'), protectedTokens[i]);
+    }
+    return res;
+  }
+
   const items = [];
   for (const chunk of candidateChunks) {
-    let itemText = chunk.replace(/^[-•*0-9.]+\s*/, '').trim();
+    // Hanya hapus bullet number seperti '1. ' atau '1) ' atau '- '
+    let itemText = chunk.replace(/^(?:[-•*]|\d+[\.\)])\s*/, '').trim();
     let isIncome = false;
 
     if (itemText.startsWith('+')) {
@@ -452,7 +506,7 @@ function extractTransactionItems(text) {
     const match = nominalRegex.exec(itemText);
     if (!match) continue;
 
-    const parsedAmount = parseNominal(match[1]);
+    const parsedAmount = parseNominal(match[0]);
     if (!parsedAmount || parsedAmount <= 0) continue;
 
     let description = itemText.replace(match[0], '').trim();
@@ -465,8 +519,16 @@ function extractTransactionItems(text) {
       description = description.substring(0, diTokoMatch.index).trim();
     }
 
+    // Kembalikan token asli (misal: 'pada tanggal 21')
+    description = restoreTokens(description).trim();
+
+    // Deteksi tanggal kustom jika ada dalam teks
+    const customDate = extractCustomDate(description) || extractCustomDate(text);
+
     if (!description) {
       description = isIncome ? 'Pemasukan' : 'Pengeluaran';
+    } else if (isIncome && !description.toLowerCase().includes('pemasukan') && !description.toLowerCase().includes('gaji')) {
+      description = `Pemasukan ${description}`;
     }
 
     if (!isIncome) {
@@ -490,6 +552,7 @@ function extractTransactionItems(text) {
       description,
       category,
       merchantName: merchantName || null,
+      customDate: customDate || null,
       source: 'manual',
     });
   }

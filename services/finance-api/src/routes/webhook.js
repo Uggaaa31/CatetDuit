@@ -197,18 +197,23 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
   if (!items || items.length === 0) return;
 
   if (items.length === 1) {
-    const { type, amount, description, category, merchantName } = items[0];
+    const { type, amount, description, category, merchantName, customDate } = items[0];
+
+    const txData = {
+      userNumber,
+      type: type || 'expense',
+      amount: parseFloat(amount) || 0,
+      description: description || 'Pengeluaran',
+      category: category || 'Makanan & Minuman',
+      merchantName: merchantName || null,
+      source: sourceLabel || 'manual',
+    };
+    if (customDate) {
+      txData.createdAt = customDate;
+    }
 
     const tx = await prisma.transaction.create({
-      data: {
-        userNumber,
-        type: type || 'expense',
-        amount: parseFloat(amount) || 0,
-        description: description || 'Pengeluaran',
-        category: category || 'Makanan & Minuman',
-        merchantName: merchantName || null,
-        source: sourceLabel || 'manual',
-      },
+      data: txData,
     });
 
     const icon = tx.type === 'income' ? '💰' : '💸';
@@ -219,6 +224,10 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
       `🏷️ *Kategori:* ${tx.category}\n` +
       `📦 *Barang/Catatan:* ${tx.description}\n`;
+
+    if (customDate) {
+      reply += `📅 *Tanggal Transaksi:* ${dayjs(tx.createdAt).format('DD/MM/YYYY')}\n`;
+    }
 
     if (tx.merchantName) {
       reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
@@ -253,16 +262,20 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
   const createdTxs = [];
 
   for (const item of items) {
+    const txData = {
+      userNumber,
+      type: item.type || 'expense',
+      amount: parseFloat(item.amount) || 0,
+      description: item.description || 'Pengeluaran',
+      category: item.category || 'Makanan & Minuman',
+      merchantName: item.merchantName || null,
+      source: sourceLabel || 'manual_multi',
+    };
+    if (item.customDate) {
+      txData.createdAt = item.customDate;
+    }
     const tx = await prisma.transaction.create({
-      data: {
-        userNumber,
-        type: item.type || 'expense',
-        amount: parseFloat(item.amount) || 0,
-        description: item.description || 'Pengeluaran',
-        category: item.category || 'Makanan & Minuman',
-        merchantName: item.merchantName || null,
-        source: sourceLabel || 'manual_multi',
-      },
+      data: txData,
     });
     createdTxs.push(tx);
     if (item.type === 'income') totalIncome += tx.amount;
