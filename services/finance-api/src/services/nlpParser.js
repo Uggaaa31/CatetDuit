@@ -318,6 +318,63 @@ function parseFundTransfer(rawText) {
 }
 
 /**
+ * Parse perintah pergeseran / pemindahan anggaran antar kantong
+ * Contoh:
+ * - "tolong 13k itu pindahkan ke dompet makanan dari uang bulanan"
+ * - "pindahkan 13k ke dompet makanan dari uang bulanan"
+ * - "geser 50rb dari jatah rokok ke uang makan"
+ * - "pindah 20rb ke makanan dari bulanan"
+ */
+function parsePocketShift(rawText) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const lower = rawText.trim().toLowerCase();
+
+  if (!/(?:pindah|pindahkan|geser|alihkan|transfer|oper)/i.test(lower)) {
+    return null;
+  }
+
+  if (!lower.includes('dari') || (!lower.includes('ke') && !lower.includes('untuk'))) {
+    return null;
+  }
+
+  const p1 = /(?:tolong\s+)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s*(?:itu\s+)?(?:tolong\s+)?(?:pindah|pindahkan|geser|alihkan|transfer|oper)\s+(?:ke|untuk)\s+([a-z0-9\s,&]+)\s+dari\s+([a-z0-9\s,&]+)/i;
+  const p2 = /(?:tolong\s+)?(?:pindah|pindahkan|geser|alihkan|transfer|oper)\s+(?:dana\s+|uang\s+|budget\s+|anggaran\s+)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s+(?:ke|untuk)\s+([a-z0-9\s,&]+)\s+dari\s+([a-z0-9\s,&]+)/i;
+  const p3 = /(?:tolong\s+)?(?:pindah|pindahkan|geser|alihkan|transfer|oper)\s+(?:dana\s+|uang\s+|budget\s+|anggaran\s+)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s+dari\s+([a-z0-9\s,&]+)\s+(?:ke|untuk)\s+([a-z0-9\s,&]+)/i;
+
+  let match = lower.match(p1);
+  if (match) {
+    const amount = parseNominal(match[1]);
+    const toPocket = match[2].trim();
+    const fromPocket = match[3].trim();
+    if (amount > 0 && toPocket && fromPocket) {
+      return { isPocketShift: true, amount, toPocket, fromPocket, rawText };
+    }
+  }
+
+  match = lower.match(p2);
+  if (match) {
+    const amount = parseNominal(match[1]);
+    const toPocket = match[2].trim();
+    const fromPocket = match[3].trim();
+    if (amount > 0 && toPocket && fromPocket) {
+      return { isPocketShift: true, amount, toPocket, fromPocket, rawText };
+    }
+  }
+
+  match = lower.match(p3);
+  if (match) {
+    const amount = parseNominal(match[1]);
+    const fromPocket = match[2].trim();
+    const toPocket = match[3].trim();
+    if (amount > 0 && toPocket && fromPocket) {
+      return { isPocketShift: true, amount, toPocket, fromPocket, rawText };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Ekstrak item-item transaksi dari string teks
  * Mendukung single item maupun multi-item (dipisahkan baris baru, koma, atau kata hubung)
  */
@@ -448,7 +505,17 @@ function parseMessage(rawText) {
   const text = rawText.trim();
   const lower = text.toLowerCase();
 
-  // 0. Cek Pola Transfer / Pemindahan Dana Antar Bank & Kantong
+  // 0a. Cek Pergeseran Anggaran Antar Kantong (Pocket Shift)
+  const pocketShift = parsePocketShift(text);
+  if (pocketShift) {
+    return {
+      isCommand: false,
+      isPocketShift: true,
+      data: pocketShift,
+    };
+  }
+
+  // 0b. Cek Pola Transfer / Pemindahan Dana Antar Bank & Kantong
   const fundTransfer = parseFundTransfer(text);
   if (fundTransfer) {
     if (fundTransfer.isGuide) {
@@ -619,5 +686,6 @@ module.exports = {
   extractTransactionItems,
   CATEGORY_KEYWORDS,
   isConversationalText,
+  parsePocketShift,
 };
 

@@ -10,6 +10,7 @@ const {
   generateBudgetReport,
   updateCategoryBudget,
   syncDefaultBudgets,
+  transferPocketBudget,
   getPayCycleRange,
   getDualCycleGuide,
   DEFAULT_BUDGETS,
@@ -79,6 +80,32 @@ function isAllowedSender(from) {
 
   const clean = from.split('@')[0].replace(/[^0-9]/g, '');
   return allowed.includes(clean);
+}
+
+async function executePocketShiftOperation(userNumber, from, shiftData) {
+  const { amount, fromPocket, toPocket } = shiftData;
+
+  const result = await transferPocketBudget(userNumber, fromPocket, toPocket, amount);
+  if (!result.success) {
+    return await sendWhatsAppMessage(from, `⚠️ Gagal menggeser anggaran: ${result.error}`);
+  }
+
+  const reply =
+    `🔄 *Pergeseran Anggaran Antar Kantong Berhasil!*\n\n` +
+    `💰 *Nominal Dipindahkan:* ${formatRupiah(result.amount)}\n\n` +
+    `📤 *Kantong Asal:* ${result.fromCategory}\n` +
+    `   └ Limit: ${formatRupiah(result.oldFromLimit)} ➔ *${formatRupiah(result.newFromLimit)}*\n` +
+    `   └ Sisa kuota: ${formatRupiah(result.fromRemaining)}\n\n` +
+    `📥 *Kantong Tujuan:* ${result.toCategory}\n` +
+    `   └ Limit: ${formatRupiah(result.oldToLimit)} ➔ *${formatRupiah(result.newToLimit)}*\n` +
+    `   └ Sisa kuota: ${formatRupiah(result.toRemaining)}\n` +
+    (result.toCategory === 'Makanan & Minuman' && result.toDailyAllowance > 0
+      ? `   └ Jatah harian baru: *${formatRupiah(result.toDailyAllowance)}/hari* (sisa ${result.daysRemaining} hari)\n\n`
+      : '\n') +
+    `✅ Anggaran berhasil dipindahkan ke kantong ${result.toCategory}!\n` +
+    `_Ketik *budget* untuk melihat seluruh status kuota kantong._`;
+
+  return await sendWhatsAppMessage(from, reply);
 }
 
 async function executeTransferOperation(userNumber, from, transferData) {
@@ -456,6 +483,7 @@ router.post('/webhook', async (req, res) => {
 • \`pindah 800rb ke seabank\` (otomatis masuk Tabungan & Darurat)
 • \`pindah 3.3jt ke jago\` (pindah saldo operasional ke Bank Jago)
 • \`pindah 400rb ke ortu\` (Kirim Keluarga via Bank Jago)
+• \`13k pindahkan ke makanan dari uang bulanan\` (geser budget antar kantong)
 • \`pindah dana\` (panduan pemindahan & alokasi saldo)
 
 *4. Kirim Foto Struk / M-Banking:*
@@ -752,6 +780,11 @@ router.post('/webhook', async (req, res) => {
           return await executeTransferOperation(userNumber, from, aiResult.transfer);
         }
 
+        // B1. Pergeseran Anggaran Antar Kantong yang diekstrak oleh AI
+        if (aiResult.isFinancial && aiResult.pocketShift && aiResult.pocketShift.isShift) {
+          return await executePocketShiftOperation(userNumber, from, aiResult.pocketShift);
+        }
+
         // C. Percakapan umum / Pertanyaan keuangan / Sapaan ramah
         if (aiResult.friendlyResponse) {
           return await sendWhatsAppMessage(from, aiResult.friendlyResponse);
@@ -761,6 +794,10 @@ router.post('/webhook', async (req, res) => {
 
     // 4. JIKA BUKAN PERCAKAPAN BEBAS ATAU AI GAGAL / TIMEOUT:
     // Gunakan Rule-Based NLP Parser untuk transaksi cepat & terstruktur
+    if (parsed.isPocketShift && parsed.data) {
+      return await executePocketShiftOperation(userNumber, from, parsed.data);
+    }
+
     if (parsed.isTransfer && parsed.data) {
       return await executeTransferOperation(userNumber, from, parsed.data);
     }
@@ -795,6 +832,10 @@ router.post('/webhook', async (req, res) => {
 
         if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
           return await executeTransferOperation(userNumber, from, aiResult.transfer);
+        }
+
+        if (aiResult.isFinancial && aiResult.pocketShift && aiResult.pocketShift.isShift) {
+          return await executePocketShiftOperation(userNumber, from, aiResult.pocketShift);
         }
 
         if (aiResult.friendlyResponse) {

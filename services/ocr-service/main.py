@@ -177,11 +177,19 @@ class AITransferInfo(BaseModel):
     notes: Optional[str] = None
 
 
+class AIPocketShift(BaseModel):
+    isShift: bool = False
+    fromPocket: Optional[str] = None
+    toPocket: Optional[str] = None
+    amount: float = 0.0
+
+
 class ChatParseResponse(BaseModel):
     isFinancial: bool = False
-    intent: str = "general_chat"  # "transaction" | "transfer" | "general_chat"
+    intent: str = "general_chat"  # "transaction" | "transfer" | "pocket_shift" | "general_chat"
     transactions: List[AITransactionItem] = []
     transfer: Optional[AITransferInfo] = None
+    pocketShift: Optional[AIPocketShift] = None
     friendlyResponse: Optional[str] = None
     engine: str = "gemini"
 
@@ -194,16 +202,16 @@ def parse_chat_with_gemini(user_text: str, sender_name: str = "User") -> dict:
 
     TUGAS UTAMA:
     Pahami maksud dan bahasa santai/gaul/cerita pengguna.
-    Tentukan apakah pesan ini memuat informasi transaksi keuangan (pengeluaran, pemasukan, atau pemindahan saldo) atau sekadar sapaan/obrolan/pertanyaan seputar keuangan.
+    Tentukan apakah pesan ini memuat informasi transaksi keuangan (pengeluaran, pemasukan, pemindahan saldo antar bank, atau pergeseran anggaran antar kantong) atau sekadar sapaan/obrolan/pertanyaan seputar keuangan.
 
     ATURAN KATEGORI (WAJIB DIPATUHI):
     Kategori transaksi HARUS salah satu dari 10 kategori resmi berikut (DILARANG KERAS menggunakan kategori 'Lain-lain' atau kategori buatan sendiri):
-    1. "Makanan & Minuman" -> sarapan, makan siang, makan malam, jajanan, snack, resto, warteg, padang, indomie, martabak, es teh, jus, kopi sachet, gofood/shopeefood/grabfood
+    1. "Makanan & Minuman" -> sarapan, makan siang, makan malam, jajanan, snack, resto, warteg, padang, indomie, martabak, es teh, jus, kopi sachet, gofood/shopeefood/grabfood, uang makan, dompet makanan
     2. "Rokok & Vape" -> rokok (surya, sampoerna, marlboro, dll), pods, liquid, coil, tembakau, korek
     3. "Bensin & Transportasi" -> bensin (pertalite, pertamax), ojek online (gojek, grab, maxim), tarif tol, karcis parkir, servis motor/mobil, ganti oli, cuci kendaraan
     4. "Kuota & Internet" -> pulsa seluler, paket data internet (telkomsel, indosat, xl, tri, smartfren)
     5. "Listrik, Air & Wifi" -> tagihan PLN, token listrik, PDAM, air galon isi ulang, tagihan Wifi/Indihome/Biznet
-    6. "Belanja Bulanan" -> kebutuhan rumah tangga, sabun, odol, shampoo, deterjen, belanja minimarket/supermarket (Indomaret, Alfamart), pakaian, perlengkapan diri
+    6. "Belanja Bulanan" -> kebutuhan rumah tangga, sabun, odol, shampoo, deterjen, belanja minimarket/supermarket (Indomaret, Alfamart), pakaian, perlengkapan diri, uang bulanan, belanja sembako
     7. "Nongkrong & Hiburan" -> cafe, nongki bareng kawan, kopi kekinian (Janji Jiwa, Kopi Kenangan, Starbucks), bioskop, nonton, top up game (MLBB, FF, Steam), liburan, jalan-jalan
     8. "Kirim Keluarga" -> kirim uang orang tua/mama/bapak/ibu, uang saku adik/saudara/keluarga
     9. "Dana Darurat" -> biaya darurat tak terduga, beli obat di apotek, periksa dokter, ke klinik, biaya servis darurat
@@ -217,12 +225,24 @@ def parse_chat_with_gemini(user_text: str, sender_name: str = "User") -> dict:
     - description: ringkasan nama barang/aktivitas yang dibeli (singkat dan rapi, jangan masukkan kata obrolan seperti 'tadi siang gue').
     - merchantName: nama toko/merchant/tempat jika ada (contoh: 'Indomaret', 'Kopi Kenangan', 'Warteg'), jika tidak ada set null.
 
+    ATURAN PERGESERAN / PINDAH ANGGARAN ANTAR KANTONG (POCKET SHIFT):
+    Jika pengguna meminta memindahkan atau menggeser sejumlah dana/anggaran dari satu kantong dompet ke dompet lain
+    (Contoh: "tolong 13k itu pindahkan ke dompet makanan dari uang bulanan", "geser 50rb dari jatah rokok ke uang makan", "pindah 20k dari nongkrong ke bensin", "alihkan 15rb dari bulanan ke makanan"):
+    - isFinancial = true
+    - intent = "pocket_shift"
+    - pocketShift: {{
+        "isShift": true,
+        "fromPocket": "nama salah satu dari 10 kategori resmi asal (contoh: 'Belanja Bulanan')",
+        "toPocket": "nama salah satu dari 10 kategori resmi tujuan (contoh: 'Makanan & Minuman')",
+        "amount": 13000
+      }}
+
     ATURAN PEMINDAHAN REKENING & SALDO:
     Pengguna memiliki sistem pembagian rekening:
     - BSI: Rekening uang masuk / gaji utama.
     - SeaBank: Rekening tabungan & dana darurat. (Transfer 800rb ke SeaBank = 500k Dana Darurat + 300k Tabungan).
     - Bank Jago: Rekening operasional harian, belanja, dan kirim orang tua.
-    Jika pesan adalah pemindahan dana (misal: "pindahkan 800rb ke seabank", "pindah 3.3jt ke jago", "transfer 400rb ke ortu"):
+    Jika pesan adalah pemindahan dana antar bank (misal: "pindahkan 800rb ke seabank", "pindah 3.3jt ke jago", "transfer 400rb ke ortu"):
     - isFinancial = true, intent = "transfer".
     - transfer.isTransfer = true
     - transferType = "seabank_bundle" (jika ke SeaBank) ATAU "bank_to_bank" (jika BSI ke Jago) ATAU "category_pocket" (jika transfer ke kantong keluarga/darurat).
@@ -235,23 +255,8 @@ def parse_chat_with_gemini(user_text: str, sender_name: str = "User") -> dict:
     Format output JSON murni tanpa pembungkus markdown (tanpa ```json atau ```):
     {{
       "isFinancial": true,
-      "intent": "transaction",
-      "transactions": [
-        {{
-          "type": "expense",
-          "amount": 45000,
-          "description": "Makan Sate",
-          "category": "Makanan & Minuman",
-          "merchantName": null
-        }},
-        {{
-          "type": "expense",
-          "amount": 35000,
-          "description": "Rokok Surya",
-          "category": "Rokok & Vape",
-          "merchantName": "Indomaret"
-        }}
-      ],
+      "intent": "transaction | transfer | pocket_shift | general_chat",
+      "transactions": [],
       "transfer": {{
         "isTransfer": false,
         "transferType": null,
@@ -260,6 +265,12 @@ def parse_chat_with_gemini(user_text: str, sender_name: str = "User") -> dict:
         "toTarget": null,
         "category": null,
         "notes": null
+      }},
+      "pocketShift": {{
+        "isShift": false,
+        "fromPocket": null,
+        "toPocket": null,
+        "amount": 0
       }},
       "friendlyResponse": null
     }}
@@ -339,14 +350,30 @@ def parse_chat(payload: ChatParseRequest):
                 notes=transfer_data.get("notes"),
             )
 
-        is_fin = bool(result.get("isFinancial", False) or len(transactions) > 0 or (transfer_obj and transfer_obj.isTransfer))
-        intent = result.get("intent", "transaction" if is_fin else "general_chat")
+        pocket_shift_data = result.get("pocketShift")
+        pocket_shift_obj = None
+        if pocket_shift_data and pocket_shift_data.get("isShift"):
+            pocket_shift_obj = AIPocketShift(
+                isShift=True,
+                fromPocket=pocket_shift_data.get("fromPocket"),
+                toPocket=pocket_shift_data.get("toPocket"),
+                amount=float(pocket_shift_data.get("amount", 0)),
+            )
+
+        is_fin = bool(
+            result.get("isFinancial", False)
+            or len(transactions) > 0
+            or (transfer_obj and transfer_obj.isTransfer)
+            or (pocket_shift_obj and pocket_shift_obj.isShift)
+        )
+        intent = result.get("intent", "pocket_shift" if (pocket_shift_obj and pocket_shift_obj.isShift) else ("transaction" if is_fin else "general_chat"))
 
         return ChatParseResponse(
             isFinancial=is_fin,
             intent=intent,
             transactions=transactions,
             transfer=transfer_obj,
+            pocketShift=pocket_shift_obj,
             friendlyResponse=result.get("friendlyResponse"),
             engine="gemini",
         )

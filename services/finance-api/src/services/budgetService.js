@@ -247,6 +247,157 @@ async function updateCategoryBudget(userNumber, categoryName, newLimit) {
   });
 }
 
+function matchCategory(input) {
+  if (!input) return null;
+  const clean = input
+    .toLowerCase()
+    .replace(/^(?:tolong\s+|ke\s+|dari\s+|dompet\s+|kantong\s+|jatah\s+|uang\s+|pos\s+|dana\s+)+/i, '')
+    .trim();
+
+  const aliases = {
+    'makan': 'Makanan & Minuman',
+    'makanan': 'Makanan & Minuman',
+    'minum': 'Makanan & Minuman',
+    'makan & minum': 'Makanan & Minuman',
+    'uang makan': 'Makanan & Minuman',
+    'dompet makanan': 'Makanan & Minuman',
+    'kantong makanan': 'Makanan & Minuman',
+
+    'rokok': 'Rokok & Vape',
+    'vape': 'Rokok & Vape',
+    'rokok & vape': 'Rokok & Vape',
+
+    'bensin': 'Bensin & Transportasi',
+    'transport': 'Bensin & Transportasi',
+    'transportasi': 'Bensin & Transportasi',
+    'bensin & transportasi': 'Bensin & Transportasi',
+
+    'kuota': 'Kuota & Internet',
+    'internet': 'Kuota & Internet',
+    'pulsa': 'Kuota & Internet',
+    'kuota & internet': 'Kuota & Internet',
+
+    'listrik': 'Listrik, Air & Wifi',
+    'air': 'Listrik, Air & Wifi',
+    'wifi': 'Listrik, Air & Wifi',
+    'tagihan': 'Listrik, Air & Wifi',
+    'pln': 'Listrik, Air & Wifi',
+    'listrik, air & wifi': 'Listrik, Air & Wifi',
+
+    'bulanan': 'Belanja Bulanan',
+    'belanja': 'Belanja Bulanan',
+    'uang bulanan': 'Belanja Bulanan',
+    'belanja bulanan': 'Belanja Bulanan',
+    'sembako': 'Belanja Bulanan',
+    'dompet bulanan': 'Belanja Bulanan',
+    'kantong bulanan': 'Belanja Bulanan',
+
+    'darurat': 'Dana Darurat',
+    'dana darurat': 'Dana Darurat',
+
+    'tabungan': 'Tabungan',
+    'investasi': 'Tabungan',
+    'tabungan & investasi': 'Tabungan',
+
+    'nongkrong': 'Nongkrong & Hiburan',
+    'hiburan': 'Nongkrong & Hiburan',
+    'ngopi': 'Nongkrong & Hiburan',
+    'cafe': 'Nongkrong & Hiburan',
+    'nongkrong & hiburan': 'Nongkrong & Hiburan',
+
+    'keluarga': 'Kirim Keluarga',
+    'ortu': 'Kirim Keluarga',
+    'orang tua': 'Kirim Keluarga',
+    'mama': 'Kirim Keluarga',
+    'ibu': 'Kirim Keluarga',
+    'kirim keluarga': 'Kirim Keluarga',
+  };
+
+  const rawLower = input.toLowerCase().trim();
+  if (aliases[clean]) return aliases[clean];
+  if (aliases[rawLower]) return aliases[rawLower];
+
+  const allCats = Object.keys(DEFAULT_BUDGETS);
+  for (const cat of allCats) {
+    if (cat.toLowerCase().includes(clean) || clean.includes(cat.toLowerCase())) {
+      return cat;
+    }
+  }
+
+  return null;
+}
+
+async function transferPocketBudget(userNumber, fromCategoryInput, toCategoryInput, amount) {
+  await ensureDefaultBudgets(userNumber);
+
+  const fromCat = matchCategory(fromCategoryInput);
+  const toCat = matchCategory(toCategoryInput);
+
+  if (!fromCat) {
+    return { success: false, error: `Kantong asal '${fromCategoryInput}' tidak dikenali.` };
+  }
+  if (!toCat) {
+    return { success: false, error: `Kantong tujuan '${toCategoryInput}' tidak dikenali.` };
+  }
+  if (fromCat === toCat) {
+    return { success: false, error: 'Kantong asal dan kantong tujuan tidak boleh sama.' };
+  }
+  if (!amount || amount <= 0) {
+    return { success: false, error: 'Nominal yang dipindahkan harus lebih dari Rp 0.' };
+  }
+
+  const fromBudget = await prisma.budget.findUnique({
+    where: { userNumber_category: { userNumber, category: fromCat } },
+  });
+  const toBudget = await prisma.budget.findUnique({
+    where: { userNumber_category: { userNumber, category: toCat } },
+  });
+
+  const currentFromLimit = fromBudget ? fromBudget.monthlyLimit : DEFAULT_BUDGETS[fromCat] || 0;
+  const currentToLimit = toBudget ? toBudget.monthlyLimit : DEFAULT_BUDGETS[toCat] || 0;
+
+  if (currentFromLimit < amount) {
+    return {
+      success: false,
+      error: `Limit kantong '${fromCat}' (${formatRupiah(currentFromLimit)}) lebih kecil dari nominal yang ingin dipindahkan (${formatRupiah(amount)}).`,
+    };
+  }
+
+  const newFromLimit = currentFromLimit - amount;
+  const newToLimit = currentToLimit + amount;
+
+  await prisma.budget.upsert({
+    where: { userNumber_category: { userNumber, category: fromCat } },
+    update: { monthlyLimit: newFromLimit },
+    create: { userNumber, category: fromCat, monthlyLimit: newFromLimit },
+  });
+
+  await prisma.budget.upsert({
+    where: { userNumber_category: { userNumber, category: toCat } },
+    update: { monthlyLimit: newToLimit },
+    create: { userNumber, category: toCat, monthlyLimit: newToLimit },
+  });
+
+  const cycle = getPayCycleRange();
+  const fromStatus = await checkBudgetStatus(userNumber, fromCat);
+  const toStatus = await checkBudgetStatus(userNumber, toCat);
+
+  return {
+    success: true,
+    amount,
+    fromCategory: fromCat,
+    toCategory: toCat,
+    oldFromLimit: currentFromLimit,
+    newFromLimit,
+    oldToLimit: currentToLimit,
+    newToLimit,
+    fromRemaining: fromStatus.remaining,
+    toRemaining: toStatus.remaining,
+    toDailyAllowance: toStatus.dailyAllowance,
+    daysRemaining: cycle.daysRemaining,
+  };
+}
+
 function getDualCycleGuide() {
   const cycle = getPayCycleRange();
 
@@ -290,6 +441,8 @@ module.exports = {
   checkBudgetStatus,
   generateBudgetReport,
   updateCategoryBudget,
+  matchCategory,
+  transferPocketBudget,
   getPayCycleRange,
   getDualCycleGuide,
   formatRupiah,
