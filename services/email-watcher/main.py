@@ -26,13 +26,81 @@ def clean_html(html_content: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
+def parse_bank_jago(subject: str, body: str, sender: str) -> dict:
+    """
+    Parser khusus untuk notifikasi transaksi dari Bank Jago (noreply@jago.com).
+    Mendukung pembayaran QRIS/Merchant, Transfer, Bayar Tagihan, Top Up, dan Uang Masuk.
+    """
+    subject_clean = subject.replace("💸", "").strip()
+    tx_type = "expense"
+    merchant = "Merchant Jago"
+    description = subject_clean
+
+    # 1. Deteksi Tipe & Merchant dari Subjek
+    # Contoh: "Kamu telah membayar ke SKAGE BANDANG MKS Restora"
+    m_bayar = re.search(r"telah membayar ke\s+(.+)$", subject_clean, re.IGNORECASE)
+    m_transfer = re.search(r"telah transfer ke\s+(.+)$", subject_clean, re.IGNORECASE)
+    m_kirim = re.search(r"kirim uang ke\s+(.+)$", subject_clean, re.IGNORECASE)
+    m_terima = re.search(r"(?:menerima uang dari|uang masuk dari)\s+(.+)$", subject_clean, re.IGNORECASE)
+    m_topup = re.search(r"top up ke\s+(.+)$", subject_clean, re.IGNORECASE)
+    m_tagihan = re.search(r"bayar tagihan\s+(.+)$", subject_clean, re.IGNORECASE)
+
+    if m_bayar:
+        merchant = m_bayar.group(1).strip()
+        tx_type = "expense"
+        description = f"Pembayaran ke {merchant}"
+    elif m_transfer:
+        merchant = m_transfer.group(1).strip()
+        tx_type = "expense"
+        description = f"Transfer ke {merchant}"
+    elif m_kirim:
+        merchant = m_kirim.group(1).strip()
+        tx_type = "expense"
+        description = f"Kirim uang ke {merchant}"
+    elif m_topup:
+        merchant = m_topup.group(1).strip()
+        tx_type = "expense"
+        description = f"Top up {merchant}"
+    elif m_tagihan:
+        merchant = m_tagihan.group(1).strip()
+        tx_type = "expense"
+        description = f"Bayar tagihan {merchant}"
+    elif m_terima:
+        merchant = m_terima.group(1).strip()
+        tx_type = "income"
+        description = f"Uang masuk dari {merchant}"
+
+    # Jika merchant belum terdeteksi dari subjek, cari di body: "Ke <Nama>"
+    if merchant == "Merchant Jago":
+        body_ke_match = re.search(r"(?:Ke|Penerima|Tujuan)\s*[:\n]\s*([^\n\r0-9]{3,40})", body, re.IGNORECASE)
+        if body_ke_match:
+            merchant = body_ke_match.group(1).strip()
+            description = f"Pembayaran ke {merchant}"
+
+    # 2. Ekstrak Nominal dari Body Jago
+    # Jago biasanya menulis: "Jumlah Rp35.000" atau "Total: Rp 35.000" atau tabel transaksi
+    amount = extract_amount(body)
+    if amount <= 0:
+        amount = extract_amount(subject)
+
+    return {
+        "matched": True,
+        "bankName": "Bank Jago",
+        "source": "email_bank_jago",
+        "type": tx_type,
+        "amount": amount,
+        "merchantName": merchant,
+        "description": description,
+    }
+
+
 def extract_amount(text: str) -> float:
-    # Pola: Rp 50.000 atau Rp. 50.000,00 atau IDR 50,000
+    # Pola: Rp 50.000 atau Rp. 50.000,00 atau IDR 50,000 atau Rp50.000
     patterns = [
         r"(?:rp\.?|idr)\s*([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{2})?)",
         r"(?:rp\.?|idr)\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{2})?)",
+        r"(?:sebesar|nominal|jumlah|total)\s*:?\s*(?:rp\.?|idr)?\s*([0-9]{1,3}(?:\.[0-9]{3})+)",
         r"(?:rp\.?|idr)\s*([0-9]+)",
-        r"(?:sebesar|nominal|jumlah)\s*(?:rp\.?|idr)?\s*([0-9]{1,3}(?:\.[0-9]{3})+)",
     ]
 
     for p in patterns:
@@ -53,16 +121,23 @@ def extract_amount(text: str) -> float:
 
 
 def extract_merchant(text: str, subject: str) -> str:
-    # Cek pola merchant di notifikasi QRIS / Bank
+    # Cek pola merchant di notifikasi QRIS / Bank umum
     merchant_patterns = [
-        r"(?:ke|di|merchant|penerima|toko|kepada)\s*:\s*([A-Za-z0-9\s\.\-]{3,30})",
-        r"(?:transaksi di|pembayaran ke)\s+([A-Za-z0-9\s\.\-]{3,30})",
+        r"(?:membayar ke|pembayaran ke|transaksi di|transfer ke)\s+([A-Za-z0-9\s\.\-]{3,35})",
+        r"(?:ke|di|merchant|penerima|toko|kepada)\s*[:\n]\s*([A-Za-z0-9\s\.\-]{3,35})",
     ]
+
+    for p in merchant_patterns:
+        m = re.search(p, subject, re.IGNORECASE)
+        if m:
+            clean = m.group(1).split("\n")[0].replace("💸", "").strip()
+            if len(clean) > 2:
+                return clean
 
     for p in merchant_patterns:
         m = re.search(p, text, re.IGNORECASE)
         if m:
-            clean = m.group(1).split("\n")[0].strip()
+            clean = m.group(1).split("\n")[0].replace("💸", "").strip()
             if len(clean) > 2:
                 return clean
 
@@ -71,7 +146,7 @@ def extract_merchant(text: str, subject: str) -> str:
 
 def infer_transaction_type(text: str, subject: str) -> str:
     combined = (subject + " " + text).lower()
-    if any(k in combined for k in ["masuk", "diterima", "kredit", "credit", "top up", "penjualan"]):
+    if any(k in combined for k in ["masuk", "diterima", "kredit", "credit", "top up masuk", "penjualan"]):
         return "income"
     return "expense"
 
@@ -87,13 +162,38 @@ def process_email_message(msg_data, client, msg_id):
 
     logger.info(f"Memeriksa email baru - Subjek: '{subject}' dari: {sender}")
 
-    keywords = ["qris", "pembayaran", "transaksi", "penarikan", "transfer", "debet", "kredit", "dana bisnis", "bca", "gopay"]
+    sender_lower = sender.lower()
     subject_lower = subject.lower()
-    is_relevant = any(k in subject_lower for k in keywords)
 
-    if not is_relevant:
+    # Daftar keyword relevan transaksi
+    keywords = [
+        "qris", "pembayaran", "membayar", "transaksi", "penarikan",
+        "transfer", "kirim uang", "uang masuk", "debet", "kredit",
+        "dana bisnis", "bca", "gopay", "jago", "seabank", "bsi"
+    ]
+    is_known_bank_sender = any(b in sender_lower for b in ["jago.com", "bca.co.id", "bsi.co.id", "seabank.co.id", "dana.id", "shopee", "gopay"])
+    is_relevant_subject = any(k in subject_lower for k in keywords)
+
+    if not is_known_bank_sender and not is_relevant_subject:
         return
 
+    # 1. Handle Khusus Bank Jago
+    if "jago.com" in sender_lower or "jago" in subject_lower:
+        parsed = parse_bank_jago(subject, body, sender)
+        if parsed["amount"] > 0:
+            payload = {
+                "source": "email_bank_jago",
+                "bankName": "Bank Jago",
+                "type": parsed["type"],
+                "amount": parsed["amount"],
+                "description": parsed["description"],
+                "merchantName": parsed["merchantName"],
+                "notificationRaw": f"Subject: {subject}\nFrom: {sender}\n\n{body[:500]}",
+            }
+            send_to_finance_api(payload, client, msg_id, parsed["amount"], parsed["merchantName"])
+            return
+
+    # 2. Handle Bank / QRIS Lainnya Secara Umum
     amount = extract_amount(body + " " + subject)
     if amount <= 0:
         logger.warning("Tidak dapat mendeteksi nominal transaksi pada email ini.")
@@ -104,14 +204,17 @@ def process_email_message(msg_data, client, msg_id):
 
     payload = {
         "source": "email_qris",
+        "bankName": "QRIS / Bank",
         "type": tx_type,
         "amount": amount,
         "description": f"{subject[:80]}",
         "merchantName": merchant,
-        "category": "Pembayaran QRIS / Bank",
         "notificationRaw": f"Subject: {subject}\nFrom: {sender}\n\n{body[:500]}",
     }
+    send_to_finance_api(payload, client, msg_id, amount, merchant)
 
+
+def send_to_finance_api(payload: dict, client, msg_id, amount: float, merchant: str):
     try:
         res = requests.post(f"{FINANCE_API_URL}/transactions", json=payload, timeout=10)
         if res.status_code in [200, 201]:
