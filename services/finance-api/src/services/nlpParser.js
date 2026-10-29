@@ -2,52 +2,109 @@
 
 const CATEGORY_KEYWORDS = {
   'Makanan & Minuman': [
-    'makan', 'minum', 'sarapan', 'lunch', 'dinner', 'nasi', 'mie', 'bakso', 'sate',
-    'ayam', 'snack', 'jajan', 'grabfood', 'gofood', 'shopeefood', 'es teh', 'boba',
-    'warteg', 'padang', 'kantin', 'catering'
+    // Kata umum makan & minum
+    'makan', 'minum', 'sarapan', 'lunch', 'dinner', 'jajan', 'ngemil', 'nyemil', 'order', 'pesan makan',
+    'lauk', 'sayur', 'sayuran', 'bungkus', 'makanan', 'minuman', 'kuliner', 'cemilan', 'snack', 'kantin',
+    'katering', 'catering', 'warteg', 'padang', 'warung makan', 'rumah makan', 'resto', 'restoran',
+    'grabfood', 'gofood', 'shopeefood', 'maxim food',
+    // Makanan spesifik sehari-hari
+    'nasi', 'nasgor', 'nasi goreng', 'nasi uduk', 'nasi kuning', 'nasi campur', 'nasi padang', 'nasi bakar',
+    'mie', 'bakmi', 'mie ayam', 'mie instan', 'indomie', 'mie goreng', 'mie kuah', 'mie rebus', 'kwetiau', 'bihun',
+    'bakso', 'baso', 'sate', 'soto', 'rawon', 'pecel', 'pecel lele', 'lalapan', 'penyet', 'geprek', 'ayam geprek',
+    'ayam goreng', 'ayam bakar', 'ayam', 'bebek', 'lele', 'ikan', 'ikan bakar', 'ikan goreng', 'seafood', 'cumi', 'udang',
+    'tahu', 'tempe', 'telur', 'telor', 'martabak', 'terang bulan', 'seblak', 'cilok', 'cireng', 'siomay', 'batagor',
+    'pempek', 'bubur', 'bubur ayam', 'lontong', 'ketoprak', 'gado-gado', 'karedok', 'burger', 'pizza', 'kebab',
+    'dimsum', 'hotdog', 'sandwich', 'pasta', 'spaghetti', 'steak', 'roti', 'donat', 'kue', 'croissant',
+    'mcd', 'kfc', 'hokben', 'dcost', 'solaria', 'richeese', 'aw', 'burger king', 'marugame',
+    // Minuman
+    'es teh', 'teh manis', 'teh botol', 'teh pucuk', 'es jeruk', 'jeruk peras', 'jus', 'juice', 'jus buah',
+    'alpukat', 'mangga', 'pop ice', 'boba', 'chatime', 'haus', 'xiboba', 'teh', 'es kelapa', 'kelapa muda',
+    'air mineral', 'aqua', 'le minerale', 'cleo', 'vit', 'club', 'susu', 'susu ultra', 'milo', 'yakult', 'yoghurt',
+    'cappuccino', 'latte', 'chocolatos', 'cincau', 'cendol', 'dawet', 'wedang', 'ronde', 'sekoteng'
   ],
   'Rokok & Vape': [
-    'rokok', 'vape', 'vapor', 'liquid', 'pod', 'coil', 'cartridge',
-    'surya', 'marlboro', 'sampoerna', 'magnum', 'gudang garam', 'esse',
-    'camel', 'djarum', 'juul', 'relx', 'iqos', 'kretek', 'filter', 'tembakau'
+    // Rokok konvensional & merek
+    'rokok', 'sebungkus rokok', 'batangan rokok', 'tembakau', 'cerutu', 'korek', 'korek api', 'tokai', 'cricket',
+    'surya', 'gudang garam', 'sampoerna', 'mild', 'marlboro', 'magnum', 'esse', 'djarum', 'djarum super',
+    'djarum coklat', 'camel', 'filter', 'kretek', 'la lights', 'u mild', 'clas mild', 'pro mild', 'dunhill',
+    'lucky strike', 'diplomat', 'wismilak', 'forte', 'sin', 'win', 'scorpion', 'apache',
+    // Vape & pods
+    'vape', 'vapor', 'liquid', 'e-liquid', 'saltnic', 'freebase', 'pod', 'coil', 'cartridge', 'mod', 'rda', 'rta',
+    'relx', 'juul', 'iqos', 'heets', 'terea', 'kapas vape', 'cotton vape'
   ],
   'Nongkrong & Hiburan': [
-    'nongkrong', 'ngopi', 'kopi', 'coffee', 'cafe', 'kafe', 'bioskop', 'cinema',
-    'xxi', 'spotify', 'netflix', 'youtube', 'game', 'topup', 'diamond', 'steam',
-    'jalan-jalan', 'liburan', 'karaoke', 'billiard'
+    // Kafe & nongkrong
+    'nongkrong', 'ngopi', 'kopi', 'coffee', 'cafe', 'kafe', 'coffee shop', 'kedai kopi', 'warkop',
+    'janji jiwa', 'kopi kenangan', 'starbucks', 'fore', 'point coffee', 'kulo', 'tomoro', 'excelso',
+    'jco', 'dunkin', 'mixue',
+    // Hiburan, games, bioskop
+    'bioskop', 'cinema', 'xxi', 'cgv', 'cinepolis', 'nonton', 'tiket bioskop', 'film',
+    'game', 'gaming', 'topup', 'top up', 'diamond', 'mlbb', 'mobile legends', 'free fire', 'ff', 'pubg',
+    'steam', 'genshin', 'roblox', 'playstation', 'ps', 'rental ps', 'warnet', 'billiard', 'biliar',
+    'karaoke', 'inul vizta', 'masterpiece', 'timezone', 'funworld',
+    // Langganan hiburan & rekreasi
+    'spotify', 'netflix', 'youtube', 'yt premium', 'disney', 'vidio', 'canva', 'apple music',
+    'liburan', 'jalan-jalan', 'staycation', 'hotel', 'villa', 'tiket wisata', 'pantai', 'gunung', 'wisata'
   ],
   'Bensin & Transportasi': [
-    'bensin', 'pertalite', 'pertamax', 'solar', 'parkir', 'ojol', 'gojek',
-    'grab', 'goride', 'gocar', 'maxim', 'krl', 'mrt', 'lrt', 'busway',
-    'angkot', 'tol', 'cuci motor', 'cuci mobil', 'tambal ban', 'servis', 'oli'
+    // BBM & SPBU
+    'bensin', 'pertalite', 'pertamax', 'turbo', 'solar', 'dexlite', 'spbu', 'pom bensin', 'pertamina', 'shell', 'bp', 'vivo',
+    // Ojol & Angkutan
+    'ojol', 'gojek', 'goride', 'gocar', 'grab', 'grabride', 'grabcar', 'maxim', 'indrive', 'taksi', 'bluebird',
+    'krl', 'commuter line', 'mrt', 'lrt', 'busway', 'transjakarta', 'angkot', 'mikrolet', 'bis', 'bus', 'travel',
+    'kereta', 'tiket kereta', 'kai', 'pesawat', 'tiket pesawat', 'kapal', 'feri',
+    // Parkir, Tol, Kendaraan
+    'parkir', 'karcis parkir', 'tol', 'etoll', 'e-toll', 'e-money', 'flazz', 'tapcash',
+    // Bengkel & Perawatan
+    'servis', 'service', 'bengkel', 'oli', 'ganti oli', 'tambal ban', 'cuci motor', 'cuci mobil', 'steam motor',
+    'isi angin', 'nitrogen', 'ban', 'ban motor', 'ban mobil', 'sparepart', 'aki', 'kampas rem', 'helm', 'spion'
   ],
   'Kuota & Internet': [
-    'kuota', 'paket data', 'paket internet', 'pulsa', 'telkomsel', 'by.u',
-    'indosat', 'xl', 'tri', 'smartfren'
+    'kuota', 'paket data', 'paket internet', 'internet hp', 'pulsa', 'isi pulsa', 'beli pulsa',
+    'telkomsel', 'by.u', 'byu', 'indosat', 'im3', 'xl', 'axis', 'tri', '3', 'smartfren', 'liveon'
   ],
   'Listrik, Air & Wifi': [
-    'listrik', 'token pln', 'pln', 'air', 'pdam', 'wifi', 'indihome', 'biznet',
-    'firstmedia', 'myrepublic', 'iuran sampah', 'sewa kost', 'kost', 'kontrakan'
+    // Listrik & Air
+    'listrik', 'token', 'token pln', 'token listrik', 'pln', 'tagihan listrik', 'bayar listrik',
+    'air', 'pdam', 'tagihan air', 'pam', 'aetra', 'tirta',
+    // Internet rumah
+    'wifi', 'bayar wifi', 'indihome', 'biznet', 'firstmedia', 'first media', 'myrepublic', 'iconnet', 'xl home', 'orbit', 'cbn',
+    // Rumah tangga pokok
+    'galon', 'air galon', 'gas', 'gas lpg', 'lpg', 'tabung gas', 'gas 3kg', 'gas 12kg',
+    'kos', 'kosan', 'sewa kos', 'bayar kos', 'kontrakan', 'sewa kontrakan', 'sewa rumah',
+    'iuran rt', 'iuran rw', 'iuran sampah', 'iuran kebersihan', 'iuran keamanan', 'pbb'
   ],
   'Belanja Bulanan': [
-    'belanja bulanan', 'indomaret', 'alfamart', 'supermarket', 'pasar',
-    'sabun', 'odol', 'shampoo', 'deterjen', 'beras', 'minyak', 'telur',
-    'bumbu', 'pewangi', 'pasta gigi'
+    // Tempat belanja
+    'indomaret', 'alfamart', 'alfamidi', 'superindo', 'hypermart', 'transmart', 'lottemart', 'pasar', 'kelontong', 'minimarket', 'supermarket',
+    // Sembako
+    'sembako', 'beras', 'minyak', 'minyak goreng', 'gula', 'garam', 'kecap', 'saos', 'bumbu', 'royco', 'masako',
+    'tepung', 'terigu', 'bawang', 'cabai', 'cabe', 'tomat', 'mie kardus', 'kopi sachet',
+    // Mandi & Kebersihan
+    'sabun', 'sabun mandi', 'shampoo', 'sampo', 'odol', 'pepsodent', 'sikat gigi', 'pasta gigi', 'sabun cuci piring',
+    'sunlight', 'mama lemon', 'deterjen', 'detergen', 'rinso', 'soklin', 'daia', 'pewangi', 'molto', 'downy',
+    'pembersih lantai', 'wipol', 'superpell', 'bayclin', 'obat nyamuk', 'baygon', 'hit', 'kapur barus', 'stella',
+    // Kebutuhan Rumah & Pribadi
+    'tisu', 'tissue', 'kapas', 'deodoran', 'rexona', 'sabun muka', 'facial wash', 'skincare', 'sunscreen',
+    'pembalut', 'pampers', 'popok', 'silet', 'cukuran', 'hanger', 'sapu', 'kain pel', 'keset', 'ember', 'gayung',
+    'piring', 'sendok', 'garpu', 'baterai', 'lampu', 'bohlam', 'plastik', 'kresek', 'lakban', 'gunting',
+    'potong rambut', 'cukur', 'barbershop', 'laundry', 'cuci baju', 'baju', 'kaos', 'celana', 'sandal', 'sepatu'
   ],
   'Kirim Keluarga': [
-    'kirim ortu', 'kirim ibu', 'kirim bapak', 'kirim keluarga', 'transfer ortu',
-    'transfer keluarga', 'uang jajan adik', 'sedekah', 'infaq', 'zakat'
+    'ortu', 'orang tua', 'ibu', 'mama', 'emak', 'bunda', 'umi', 'bapak', 'ayah', 'papa', 'abi', 'babeh',
+    'adik', 'adek', 'kakak', 'abang', 'anak', 'istri', 'mertua', 'keluarga', 'saudara', 'famili',
+    'kirim ortu', 'kirim keluarga', 'kirim ibu', 'kirim bapak', 'transfer ortu', 'transfer keluarga', 'transfer ibu',
+    'uang jajan adik', 'spp adik', 'uang saku', 'nafkah', 'sedekah', 'infaq', 'zakat', 'donasi', 'sumbangan', 'kondangan', 'amplop'
   ],
   'Dana Darurat': [
-    'dana darurat', 'darurat', 'biaya berobat mendadak', 'bengkel darurat'
+    'darurat', 'emergency', 'sakit', 'berobat', 'dokter', 'klinik', 'puskesmas', 'rumah sakit', 'rs', 'ugd', 'igd',
+    'obat', 'apotek', 'apotik', 'kimia farma', 'k24', 'panadol', 'paracetamol', 'bodrex', 'tolak angin',
+    'tes darah', 'tensi', 'cek kesehatan', 'perban', 'betadine', 'plester', 'biaya darurat', 'pengeluaran darurat'
   ],
   'Tabungan': [
-    'tabungan', 'nabung', 'simpanan', 'deposito', 'reksadana', 'saham',
-    'investasi', 'beli emas', 'logam mulia', 'bibit', 'bareksa'
-  ],
-  'Pemasukan': [
-    'gaji', 'bonus', 'freelance', 'proyek', 'omset', 'arisan', 'dividen',
-    'transfer masuk', 'refund', 'kembalian', 'penjualan'
+    'tabungan', 'nabung', 'simpanan', 'celengan', 'deposito', 'simpan uang', 'setor tabungan', 'sisihkan',
+    'reksadana', 'saham', 'investasi', 'bibit', 'bareksa', 'ajaib', 'pluang', 'emas', 'logam mulia', 'antam',
+    'seabank', 'sea bank'
   ]
 };
 
@@ -83,21 +140,181 @@ function parseNominal(str) {
 }
 
 /**
- * Deteksi Kategori otomatis berdasarkan deskripsi teks
+ * Deteksi Kategori otomatis berdasarkan deskripsi teks dan nominal
+ * DILARANG KERAS MENGEMBALIKAN 'Lain-lain'. Selalu dipetakan ke 10 kantong resmi pengguna.
  */
-function detectCategory(text, type = 'expense') {
+function detectCategory(text, type = 'expense', amount = 0) {
   if (type === 'income') return 'Gaji & Pemasukan';
-  
-  const lower = text.toLowerCase();
+  if (!text) return amount <= 35000 ? 'Makanan & Minuman' : 'Belanja Bulanan';
+
+  const lower = text.toLowerCase().trim();
+
+  // 1. Cek kecocokan langsung kata kunci (Exact substring match)
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (category === 'Pemasukan' && type === 'expense') continue;
     for (const kw of keywords) {
       if (lower.includes(kw)) {
         return category;
       }
     }
   }
-  return 'Lain-lain';
+
+  // 2. Token Matching (Pecah per kata)
+  const tokens = lower.split(/[^a-zA-Z0-9]+/).filter((t) => t.length >= 3);
+  for (const token of tokens) {
+    for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+      if (keywords.includes(token)) {
+        return category;
+      }
+    }
+  }
+
+  // 3. Heuristic Rules (Karakteristik kata bahasa Indonesia)
+  if (/makan|minum|pedas|manis|asin|goreng|bakar|rebus|kuah|paket|porsi|bungkus|resto|warung|kedai|dapur/i.test(lower)) {
+    return 'Makanan & Minuman';
+  }
+  if (/rumah|kamar|kontrakan|iuran|tagihan|pln|pdam|wifi|lpg|gas/i.test(lower)) {
+    return 'Listrik, Air & Wifi';
+  }
+  if (/motor|mobil|jalan|kendaraan|transport|ojek|supir|driver|bengkel|mesin|roda/i.test(lower)) {
+    return 'Bensin & Transportasi';
+  }
+  if (/toko|beli|belanja|minimarket|swalayan|pasar|mall|barang|alat|peralatan|kebersihan/i.test(lower)) {
+    return 'Belanja Bulanan';
+  }
+  if (/santai|main|kumpul|jalan|rekreasi|kafe|kopi/i.test(lower)) {
+    return 'Nongkrong & Hiburan';
+  }
+  if (/ortu|keluarga|ibu|ayah|mama|papa|adik|kakak|anak|sedekah|infaq/i.test(lower)) {
+    return 'Kirim Keluarga';
+  }
+
+  // 4. Default Fallback Cerdas (Tidak akan pernah keluar 'Lain-lain')
+  if (amount > 0 && amount <= 35000) {
+    return 'Makanan & Minuman';
+  }
+  return 'Belanja Bulanan';
+}
+
+/**
+ * Deteksi dan Parse Transaksi Pemindahan Dana / Mutasi Antar Rekening & Kantong
+ */
+function parseFundTransfer(rawText) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const text = rawText.trim();
+  const lower = text.toLowerCase();
+
+  // Kata kunci indikasi transfer/pemindahan dana
+  const transferKeywords = ['pindah', 'pindahkan', 'transfer', 'alokasi', 'alokasikan', 'mutasi', 'masukkan saldo', 'masuk saldo'];
+  const hasTransferKeyword = transferKeywords.some((kw) => lower.includes(kw));
+
+  if (!hasTransferKeyword) return null;
+
+  // Cek apakah hanya bertanya panduan ("pindahkan dana ini ke sini", "pindah dana", "cara pindah dana")
+  const isQuestionOrGuide =
+    lower === 'pindahkan dana ini ke sini' ||
+    lower === 'pindah dana ini ke sini' ||
+    lower === 'pindahkan dana' ||
+    lower === 'pindah dana' ||
+    lower === 'cara pindah dana' ||
+    lower === 'panduan pindah dana' ||
+    lower === 'mutasi dana' ||
+    lower === 'alokasi dana' ||
+    lower === 'transfer dana' ||
+    lower === 'pindah saldo' ||
+    lower.includes('cara pindah') ||
+    lower.includes('cara transfer') ||
+    lower.includes('pindahkan dana ini');
+
+  // Ambil nominal jika ada
+  const nominalRegex = /(?:rp\.?\s*)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)/gi;
+  const matchNominal = nominalRegex.exec(text);
+
+  if (!matchNominal || isQuestionOrGuide) {
+    return { isGuide: true };
+  }
+
+  const amount = parseNominal(matchNominal[1]);
+  if (!amount || amount <= 0) {
+    return { isGuide: true };
+  }
+
+  // Tentukan bank asal
+  let fromBank = 'BSI';
+  if (lower.includes('dari jago')) fromBank = 'Bank Jago';
+  else if (lower.includes('dari seabank')) fromBank = 'SeaBank';
+  else if (lower.includes('dari bsi')) fromBank = 'BSI';
+
+  // Tentukan target transfer
+  let toTarget = 'Bank Jago';
+  let category = 'Belanja Bulanan';
+  let transferType = 'bank_to_bank';
+
+  if (lower.includes('seabank') || lower.includes('sea bank')) {
+    toTarget = 'SeaBank';
+    if (amount === 800000) {
+      transferType = 'seabank_bundle'; // Otomatis split 500k darurat + 300k tabungan
+      category = 'Tabungan';
+    } else if (lower.includes('darurat')) {
+      transferType = 'category_pocket';
+      category = 'Dana Darurat';
+    } else {
+      transferType = 'category_pocket';
+      category = 'Tabungan';
+    }
+  } else if (lower.includes('ortu') || lower.includes('orang tua') || lower.includes('ibu') || lower.includes('bapak') || lower.includes('mama') || lower.includes('keluarga')) {
+    toTarget = 'Orang Tua / Keluarga';
+    category = 'Kirim Keluarga';
+    transferType = 'category_pocket';
+  } else if (lower.includes('darurat') || lower.includes('emergency')) {
+    toTarget = 'Dana Darurat';
+    category = 'Dana Darurat';
+    transferType = 'category_pocket';
+  } else if (lower.includes('tabung') || lower.includes('investasi') || lower.includes('bibit')) {
+    toTarget = 'Tabungan & Investasi';
+    category = 'Tabungan';
+    transferType = 'category_pocket';
+  } else if (lower.includes('makan')) {
+    toTarget = 'Kantong Uang Makan';
+    category = 'Makanan & Minuman';
+    transferType = 'category_pocket';
+  } else if (lower.includes('rokok') || lower.includes('vape')) {
+    toTarget = 'Kantong Rokok & Vape';
+    category = 'Rokok & Vape';
+    transferType = 'category_pocket';
+  } else if (lower.includes('nongkrong') || lower.includes('kopi')) {
+    toTarget = 'Kantong Nongkrong & Kopi';
+    category = 'Nongkrong & Hiburan';
+    transferType = 'category_pocket';
+  } else if (lower.includes('bensin') || lower.includes('transport')) {
+    toTarget = 'Kantong Bensin & Transportasi';
+    category = 'Bensin & Transportasi';
+    transferType = 'category_pocket';
+  } else if (lower.includes('listrik') || lower.includes('wifi') || lower.includes('air') || lower.includes('tagihan')) {
+    toTarget = 'Kantong Tagihan (Listrik/Wifi)';
+    category = 'Listrik, Air & Wifi';
+    transferType = 'category_pocket';
+  } else if (lower.includes('kuota') || lower.includes('pulsa')) {
+    toTarget = 'Kantong Kuota & Internet';
+    category = 'Kuota & Internet';
+    transferType = 'category_pocket';
+  } else if (lower.includes('sembako') || lower.includes('belanja')) {
+    toTarget = 'Kantong Belanja Sembako';
+    category = 'Belanja Bulanan';
+    transferType = 'category_pocket';
+  } else if (lower.includes('jago') || lower.includes('bank jago')) {
+    toTarget = 'Bank Jago';
+    transferType = 'bank_to_bank';
+  }
+
+  return {
+    isTransfer: true,
+    amount,
+    fromBank,
+    toTarget,
+    category,
+    transferType,
+    rawText: text,
+  };
 }
 
 /**
@@ -208,7 +425,7 @@ function extractTransactionItems(text) {
     }
 
     const type = isIncome ? 'income' : 'expense';
-    const category = detectCategory(description, type);
+    const category = detectCategory(description, type, parsedAmount);
 
     items.push({
       type,
@@ -230,6 +447,19 @@ function parseMessage(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
   const text = rawText.trim();
   const lower = text.toLowerCase();
+
+  // 0. Cek Pola Transfer / Pemindahan Dana Antar Bank & Kantong
+  const fundTransfer = parseFundTransfer(text);
+  if (fundTransfer) {
+    if (fundTransfer.isGuide) {
+      return { isCommand: true, action: 'fund_transfer_guide' };
+    }
+    return {
+      isCommand: false,
+      isTransfer: true,
+      data: fundTransfer,
+    };
+  }
 
   // 1. Cek Perintah Khusus (Command)
   if (lower === 'help' || lower === 'bantuan' || lower === 'menu' || lower === 'panduan') {

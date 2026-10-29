@@ -2,38 +2,36 @@ const prisma = require('../db');
 const dayjs = require('dayjs');
 const { getPayCycleRange, formatRupiah, checkBudgetStatus } = require('./budgetService');
 const { sendWhatsAppMessage } = require('./waClient');
+const { detectCategory } = require('./nlpParser');
+const {
+  BOT_NUMBERS,
+  LID_ALIASES,
+  isRealPhoneNumber,
+  normalizePhoneNumber,
+  getPrimaryUserNumber,
+} = require('../config');
 
-const BOT_NUMBERS = ['62881081881341', '227087872991280'];
 const sentNightlyReminders = new Set();
 const sentAllocationReminders22 = new Set();
-
-function isRealPhoneNumber(str) {
-  if (!str) return false;
-  const clean = str.replace(/[^0-9]/g, '');
-  // Nomor HP reguler Indonesia diawali 62 atau 08, panjang 10-15 digit
-  // WhatsApp LID biasanya 14+ digit tetapi tidak diawali 62/08 (misal 157075..., 22708...)
-  return (clean.startsWith('62') || clean.startsWith('08')) && clean.length >= 10 && clean.length <= 15;
-}
-
-function normalizePhoneNumber(str) {
-  if (!str) return '';
-  let clean = str.replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '62' + clean.slice(1);
-  }
-  return clean;
-}
 
 /**
  * Otomatis konsolidasi data transaksi yang tersimpan di bawah LID ke nomor HP utama
  */
 async function consolidateLidRecords() {
   try {
-    const canonical = '6281341185188';
+    const canonical = getPrimaryUserNumber();
+    if (!canonical) {
+      console.warn('[scheduler] Konsolidasi LID dilewati: PRIMARY_USER_NUMBER belum diset.');
+      return;
+    }
+    if (LID_ALIASES.length === 0) {
+      return;
+    }
+
     const result = await prisma.transaction.updateMany({
       where: {
         userNumber: {
-          in: ['15707500732532', '227087872991280'],
+          in: LID_ALIASES,
         },
       },
       data: {
@@ -41,14 +39,14 @@ async function consolidateLidRecords() {
       },
     });
     if (result.count > 0) {
-      console.log(`[scheduler] Berhasil mengonsolidasi ${result.count} transaksi dari LID ke nomor telepon utama ${canonical}`);
+      console.log(`[scheduler] Berhasil mengonsolidasi ${result.count} transaksi dari LID ke nomor telepon utama`);
     }
 
     // Bersihkan budget duplikat LID jika ada
     await prisma.budget.deleteMany({
       where: {
         userNumber: {
-          in: ['15707500732532', '227087872991280'],
+          in: LID_ALIASES,
         },
       },
     });
@@ -76,6 +74,21 @@ async function consolidateLidRecords() {
         amount: 4100000,
       },
     });
+
+    // Otomatis reklasifikasi transaksi lama yang sempat masuk ke 'Lain-lain' ke 10 kantong resmi
+    const lainLainTxs = await prisma.transaction.findMany({
+      where: { category: 'Lain-lain' },
+    });
+    for (const tx of lainLainTxs) {
+      const fixedCat = detectCategory(tx.description, tx.type, tx.amount);
+      await prisma.transaction.update({
+        where: { id: tx.id },
+        data: { category: fixedCat },
+      });
+    }
+    if (lainLainTxs.length > 0) {
+      console.log(`[scheduler] Berhasil mereklasifikasi ${lainLainTxs.length} transaksi dari 'Lain-lain' ke kategori resmi.`);
+    }
   } catch (err) {
     console.warn('[scheduler] Catatan migrasi LID DB:', err.message);
   }
@@ -122,9 +135,12 @@ async function getTargetUserNumbers() {
     console.error('[scheduler] Gagal mengambil nomor dari DB:', err.message);
   }
 
-  // 3. Fallback default nomor pengguna utama jika kosong
+  // 3. Fallback ke nomor pengguna utama dari env jika tidak ada target lain
   if (targets.size === 0) {
-    targets.add('6281341185188');
+    const primary = getPrimaryUserNumber();
+    if (primary) {
+      targets.add(primary);
+    }
   }
 
   return Array.from(targets);
@@ -429,6 +445,7 @@ function startRecurringScheduler() {
 
 module.exports = {
   getTargetUserNumbers,
+  consolidateLidRecords,
   executeSalary21,
   executeBooster1,
   executeNightlyReminder,

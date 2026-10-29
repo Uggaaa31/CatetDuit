@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const prisma = require('../db');
 const { sendWhatsAppMessage } = require('../services/waClient');
+const { getPrimaryUserNumber } = require('../config');
 const dayjs = require('dayjs');
 
 function formatRupiah(number) {
@@ -13,9 +14,9 @@ function formatRupiah(number) {
 }
 
 function getDefaultUserNumber() {
-  const allowed = process.env.ALLOWED_NUMBERS || '';
-  const first = allowed.split(',')[0]?.trim().replace(/[^0-9]/g, '');
-  return first || 'default_user';
+  // Nomor pengguna utama diambil dari PRIMARY_USER_NUMBER (.env), dengan
+  // fallback ke nomor HP valid pertama di ALLOWED_NUMBERS.
+  return getPrimaryUserNumber() || 'default_user';
 }
 
 // POST /transactions (Dipanggil oleh email-watcher atau integrasi lain)

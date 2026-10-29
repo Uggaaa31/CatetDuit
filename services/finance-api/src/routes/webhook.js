@@ -61,44 +61,7 @@ function getPeriodRange(period) {
   };
 }
 
-const BOT_NUMBERS = ['62881081881341', '227087872991280'];
-
-function isRealPhoneNumber(str) {
-  if (!str) return false;
-  const clean = str.replace(/[^0-9]/g, '');
-  return (clean.startsWith('62') || clean.startsWith('08')) && clean.length >= 10 && clean.length <= 15;
-}
-
-function normalizePhoneNumber(str) {
-  if (!str) return '';
-  let clean = str.replace(/[^0-9]/g, '');
-  if (clean.startsWith('08')) {
-    clean = '62' + clean.slice(1);
-  }
-  return clean;
-}
-
-function getCanonicalUserNumber(from) {
-  if (!from) return '6281341185188';
-  const clean = from.split('@')[0].replace(/[^0-9]/g, '');
-
-  if (isRealPhoneNumber(clean)) {
-    return normalizePhoneNumber(clean);
-  }
-
-  // Jika sender adalah LID (seperti 15707500732532), petakan ke nomor telepon asli user dari ALLOWED_NUMBERS
-  const allowedPhones = (process.env.ALLOWED_NUMBERS || '')
-    .split(',')
-    .map((n) => n.trim().replace(/[^0-9]/g, ''))
-    .filter((n) => isRealPhoneNumber(n) && !BOT_NUMBERS.includes(n))
-    .map(normalizePhoneNumber);
-
-  if (allowedPhones.length > 0) {
-    return allowedPhones[0];
-  }
-
-  return '6281341185188';
-}
+const { getCanonicalUserNumber } = require('../config');
 
 function isAllowedSender(from) {
   if (!from) return false;
@@ -280,27 +243,33 @@ router.post('/webhook', async (req, res) => {
 • \`+gaji 4.1jt\`
 • \`+pemasukan 500rb booster\`
 
-*3. Kirim Foto Struk / M-Banking:*
+*3. Pindah Dana & Alokasi Rekening:*
+• \`pindah 800rb ke seabank\` (otomatis masuk Tabungan & Darurat)
+• \`pindah 3.3jt ke jago\` (pindah saldo operasional ke Bank Jago)
+• \`pindah 400rb ke ortu\` (Kirim Keluarga via Bank Jago)
+• \`pindah dana\` (panduan pemindahan & alokasi saldo)
+
+*4. Kirim Foto Struk / M-Banking:*
 • Kirim foto struk belanja atau bukti transfer m-banking, bot otomatis membaca nominal dan detailnya!
 
-*4. Cek Alokasi Gaji & Anggaran:*
+*5. Cek Alokasi Gaji & Anggaran:*
 • \`alokasi\` (panduan alokasi gajian Tgl 21 & Tgl 1)
 • \`budget\` (cek kuota & sisa hari dalam siklus gajian)
 • \`set budget bensin 250rb\` (ubah limit anggaran)
 • \`reset budget\` (kembalikan ke default Rp 4.600.000)
 
-*5. Pengingat & Simulasi:*
+*6. Pengingat & Simulasi:*
 • \`simulasi pengingat malam\` (tes notifikasi jam 22:30)
 • \`simulasi alokasi 22\` (tes reminder alokasi SeaBank & Jago Tgl 22)
 • \`simulasi gaji 21\` (tes pencatatan gaji pokok 4,1jt)
 • \`simulasi gaji 1\` (tes pencatatan booster 500k)
 
-*6. Cek Rekap & Laporan:*
+*7. Cek Rekap & Laporan:*
 • \`rekap\` (hari ini)
 • \`rekap minggu ini\`
 • \`rekap bulan ini\` (siklus gajian 21 s/d 20)
 
-*7. Ekspor Excel, Batal & Restart:*
+*8. Ekspor Excel, Batal & Restart:*
 • \`export excel\` (unduh rekapan file Excel)
 • \`batal\` (membatalkan transaksi terakhir)
 • \`restart keuangan\` (hapus semua transaksi & mulai dari nol)`;
@@ -317,6 +286,25 @@ router.post('/webhook', async (req, res) => {
       // 2c. PANDUAN DUA SIKLUS GAJI
       if (parsed.action === 'allocation_guide') {
         const guide = getDualCycleGuide();
+        return await sendWhatsAppMessage(from, guide);
+      }
+
+      // 2c-1. PANDUAN PINDAH DANA & ALOKASI REKENING
+      if (parsed.action === 'fund_transfer_guide') {
+        const guide =
+          `🔄 *Panduan Pemindahan & Alokasi Saldo*\n\n` +
+          `Untuk mencatat pemindahan uang antar bank atau alokasi ke kantong dompet, Anda cukup ketik:\n` +
+          `• \`pindah 800rb ke seabank\` ➔ (Otomatis masuk Tabungan 300k & Darurat 500k)\n` +
+          `• \`pindah 3.3jt ke jago\` ➔ (Pindah saldo operasional dari BSI ke Bank Jago)\n` +
+          `• \`pindah 400rb ke ortu\` ➔ (Otomatis masuk kategori Kirim Keluarga)\n` +
+          `• \`pindah 500rb ke dana darurat\` ➔ (Kategori Dana Darurat)\n` +
+          `• \`pindah 300rb ke tabungan\` ➔ (Kategori Tabungan)\n` +
+          `• \`pindah 1.2jt ke uang makan\` ➔ (Kategori Makanan & Minuman)\n\n` +
+          `💡 *Alur Rutin Gajian Tanggal 21-22:*\n` +
+          `1. BSI ➔ SeaBank: Rp 800.000 (Tabungan & Dana Darurat)\n` +
+          `2. BSI ➔ Bank Jago: Rp 3.300.000 (Operasional & Kirim Ortu)\n\n` +
+          `_Ketik \`alokasi 22\` untuk melihat panduan alokasi perbankan lengkap._`;
+
         return await sendWhatsAppMessage(from, guide);
       }
 
@@ -530,6 +518,89 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
+    // 2b. JIKA TRANSAKSI PEMINDAHAN / ALOKASI DANA ANTAR REKENING & KANTONG
+    if (parsed.isTransfer && parsed.data) {
+      const { amount, fromBank, toTarget, category, transferType } = parsed.data;
+
+      // Kasus A: Alokasi Bundle ke SeaBank Rp 800.000 (Dana Darurat 500k + Tabungan 300k)
+      if (transferType === 'seabank_bundle' && amount === 800000) {
+        await prisma.transaction.create({
+          data: {
+            userNumber,
+            type: 'expense',
+            source: 'transfer_seabank',
+            amount: 500000,
+            description: 'Alokasi Dana Darurat (SeaBank)',
+            category: 'Dana Darurat',
+          },
+        });
+
+        await prisma.transaction.create({
+          data: {
+            userNumber,
+            type: 'expense',
+            source: 'transfer_seabank',
+            amount: 300000,
+            description: 'Alokasi Tabungan & Investasi (SeaBank)',
+            category: 'Tabungan',
+          },
+        });
+
+        const reply =
+          `🔄 *Alokasi ke SeaBank Berhasil Dicatat!*\n\n` +
+          `🏦 *Tujuan:* SeaBank (Uang Dingin Berbunga Harian)\n` +
+          `💰 *Total Transfer:* ${formatRupiah(amount)}\n\n` +
+          `📋 *Rincian Alokasi Kantong:*\n` +
+          `• 🛡️ *Dana Darurat:* Rp 500.000 (Terkunci aman di SeaBank)\n` +
+          `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Aset bertumbuh)\n\n` +
+          `✅ Dana berhasil diamankan dari godaan belanja harian!\n` +
+          `_Ketik 'budget' untuk melihat status kuota tabungan Anda._`;
+
+        return await sendWhatsAppMessage(from, reply);
+      }
+
+      // Kasus B: Pemindahan Saldo Operasional Antar Bank (misal BSI ke Bank Jago)
+      if (transferType === 'bank_to_bank') {
+        const reply =
+          `🔄 *Pemindahan Saldo Antar Bank Berhasil Dicatat!*\n\n` +
+          `🏦 *Dari Rekening:* ${fromBank}\n` +
+          `🎯 *Ke Rekening:* ${toTarget}\n` +
+          `💰 *Nominal:* ${formatRupiah(amount)}\n\n` +
+          `✅ Uang operasional siap dialokasikan ke Kantong-Kantong Jago (Makan, Tagihan, Sembako, Ortu, Rokok).\n` +
+          `_Catatan: Pemindahan saldo antar bank ini tidak memotong kuota belanja harian._`;
+
+        return await sendWhatsAppMessage(from, reply);
+      }
+
+      // Kasus C: Alokasi ke Kantong Tertentu (Ortu, Dana Darurat, Tabungan, Makan, dll)
+      const tx = await prisma.transaction.create({
+        data: {
+          userNumber,
+          type: 'expense',
+          source: 'transfer_pocket',
+          amount,
+          description: `Alokasi / Transfer ke ${toTarget}`,
+          category,
+        },
+      });
+
+      const budgetStatus = await checkBudgetStatus(userNumber, category);
+      let budgetNote = '';
+      if (budgetStatus.hasBudget) {
+        budgetNote = `\n📊 *Status Kantong ${category}:* Terpakai ${formatRupiah(budgetStatus.totalSpent)} / ${formatRupiah(budgetStatus.monthlyLimit)}`;
+      }
+
+      const reply =
+        `✅ *Alokasi ke Kantong Berhasil Dicatat!*\n\n` +
+        `🎯 *Tujuan:* ${toTarget}\n` +
+        `💰 *Nominal:* ${formatRupiah(amount)}\n` +
+        `🏷️ *Kategori:* ${category}\n` +
+        budgetNote +
+        `\n\n_Ketik 'budget' untuk melihat sisa seluruh kuota anggaran._`;
+
+      return await sendWhatsAppMessage(from, reply);
+    }
+
     // 3. JIKA TRANSAKSI REGULER (Single Item atau Multi-Item Sekaligus)
     if (parsed.isTransaction) {
       const items = parsed.items || (parsed.data ? [parsed.data] : []);
@@ -660,8 +731,10 @@ router.post('/webhook', async (req, res) => {
       `• \`makan 25rb di warteg\`\n` +
       `• \`makan 25rb, es teh 5rb, parkir 2rb\` (catat banyak sekaligus)\n` +
       `• \`rokok surya 35rb di warung\`\n` +
+      `• \`pindah 800rb ke seabank\` (alokasi saldo simpanan)\n` +
+      `• \`pindah dana\` (panduan pemindahan saldo)\n` +
       `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
-      `• \`alokasi\` (panduan pembagian gaji tgl 21 & 1)\n` +
+      `• \`alokasi\` (panduan alokasi bank)\n` +
       `• Kirim foto struk belanja / m-banking\n\n` +
       `Ketik *bantuan* untuk melihat semua menu.`;
 

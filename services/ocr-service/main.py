@@ -63,8 +63,7 @@ def extract_with_gemini(image_path: str) -> dict:
       "recipientName": "nama pemilik rekening penerima jika bukti transfer antar-rekening",
       "notes": "berita transfer / catatan / keterangan jika ada",
       "totalAmount": 150000,
-      "date": "DD/MM/YYYY",
-      "category": "Makanan & Minuman | Bensin & Transportasi | Kuota & Internet | Listrik, Air & Wifi | Belanja Bulanan | Nongkrong & Hiburan | Kirim Keluarga | Rokok & Vape | Dana Darurat | Tabungan | Lain-lain",
+      "category": "Makanan & Minuman | Bensin & Transportasi | Kuota & Internet | Listrik, Air & Wifi | Belanja Bulanan | Nongkrong & Hiburan | Kirim Keluarga | Rokok & Vape | Dana Darurat | Tabungan",
       "items": [
         {"name": "nama item jika struk belanja", "price": 15000, "qty": 1}
       ]
@@ -73,14 +72,16 @@ def extract_with_gemini(image_path: str) -> dict:
     Panduan penting:
     - totalAmount harus berupa angka desimal murni tanpa titik atau simbol Rp (contoh: 94500 atau 150000). Jika ada biaya admin, gunakan total nominal yang terpotong.
     - transactionType: jika transfer keluar / pembayaran / debit -> "expense". Jika bukti transfer masuk / dana diterima / kredit -> "income".
+    - Kategori HARUS salah satu dari 10 kategori di atas. DILARANG menggunakan kategori 'Lain-lain'.
     - Jika ini resi M-Banking / Transfer:
       * Transfer ke orang tua / keluarga / saudara -> 'Kirim Keluarga'
       * Bayar tagihan PLN / listrik / PDAM / air / Wifi / Indihome -> 'Listrik, Air & Wifi'
       * Bayar pulsa / paket data -> 'Kuota & Internet'
       * Pembayaran QRIS restoran / warung makan / cafe / kopi -> 'Nongkrong & Hiburan' atau 'Makanan & Minuman'
       * Pembayaran di SPBU Pertamina -> 'Bensin & Transportasi'
-      * Transfer ke rekening tabungan / deposito / investasi -> 'Tabungan'
-      * Jika tidak ada keterangan spesifik -> 'Lain-lain' atau 'Belanja Bulanan'
+      * Transfer ke rekening tabungan / deposito / investasi / SeaBank -> 'Tabungan'
+      * Jika pengeluaran medis / obat / darurat -> 'Dana Darurat'
+      * Jika belanja umum minimarket / toko -> 'Belanja Bulanan'
     - Jika ini struk belanja fisik yang memiliki daftar barang belanjaan, masukkan seluruh item ke dalam array items.
     """
 
