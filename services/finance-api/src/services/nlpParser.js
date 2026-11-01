@@ -20,7 +20,8 @@ const CATEGORY_KEYWORDS = {
     'es teh', 'teh manis', 'teh botol', 'teh pucuk', 'es jeruk', 'jeruk peras', 'jus', 'juice', 'jus buah',
     'alpukat', 'mangga', 'pop ice', 'boba', 'chatime', 'haus', 'xiboba', 'teh', 'es kelapa', 'kelapa muda',
     'air mineral', 'aqua', 'le minerale', 'cleo', 'vit', 'club', 'susu', 'susu ultra', 'milo', 'yakult', 'yoghurt',
-    'cappuccino', 'latte', 'chocolatos', 'cincau', 'cendol', 'dawet', 'wedang', 'ronde', 'sekoteng'
+    'cappuccino', 'latte', 'chocolatos', 'cincau', 'cendol', 'dawet', 'wedang', 'ronde', 'sekoteng',
+    'galon', 'air galon', 'isi ulang galon', 'isi galon', 'air minum'
   ],
   'Rokok & Vape': [
     // Rokok konvensional & merek
@@ -70,11 +71,13 @@ const CATEGORY_KEYWORDS = {
     // Internet rumah
     'wifi', 'bayar wifi', 'indihome', 'biznet', 'firstmedia', 'first media', 'myrepublic', 'iconnet', 'xl home', 'orbit', 'cbn',
     // Rumah tangga pokok
-    'galon', 'air galon', 'gas', 'gas lpg', 'lpg', 'tabung gas', 'gas 3kg', 'gas 12kg',
+    'gas', 'gas lpg', 'lpg', 'tabung gas', 'gas 3kg', 'gas 12kg',
     'kos', 'kosan', 'sewa kos', 'bayar kos', 'kontrakan', 'sewa kontrakan', 'sewa rumah',
     'iuran rt', 'iuran rw', 'iuran sampah', 'iuran kebersihan', 'iuran keamanan', 'pbb'
   ],
   'Belanja Bulanan': [
+    // Belanja umum
+    'belanja bulanan', 'belanja mingguan', 'belanja harian', 'belanja sembako',
     // Tempat belanja
     'indomaret', 'alfamart', 'alfamidi', 'superindo', 'hypermart', 'transmart', 'lottemart', 'pasar', 'kelontong', 'minimarket', 'supermarket',
     // Sembako
@@ -433,6 +436,36 @@ function extractCustomDate(text) {
     return d;
   }
 
+  // 5b. Format dengan nama bulan: 'tanggal 25 oktober', '25 oktober 2026', 'tgl 25 okt'
+  const monthWordMap = {
+    januari: 0, jan: 0,
+    februari: 1, feb: 1,
+    maret: 2, mar: 2,
+    april: 3, apr: 3,
+    mei: 4,
+    juni: 5, jun: 5,
+    juli: 6, jul: 6,
+    agustus: 7, ags: 7, agt: 7,
+    september: 8, sep: 8, sept: 8,
+    oktober: 9, okt: 9,
+    november: 10, nov: 10,
+    desember: 11, des: 11,
+  };
+  const namedMonthMatch = text.match(/(?:pada\s+)?(?:tanggal|tgl)?\s*([0-9]{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|ags|agt|sep|sept|okt|nov|des)(?:\s+([0-9]{2,4}))?/i);
+  if (namedMonthMatch) {
+    const day = parseInt(namedMonthMatch[1], 10);
+    const mName = namedMonthMatch[2].toLowerCase();
+    if (day >= 1 && day <= 31 && monthWordMap[mName] !== undefined) {
+      const month = monthWordMap[mName];
+      let year = now.getFullYear();
+      if (namedMonthMatch[3]) {
+        year = parseInt(namedMonthMatch[3], 10);
+        if (year < 100) year += 2000;
+      }
+      return new Date(year, month, day, 12, 0, 0);
+    }
+  }
+
   // 6. Format: 'tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21-10-2026'
   const tglMatch = text.match(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2})(?:\s*[-/]\s*([0-9]{1,2}))?(?:\s*[-/]\s*([0-9]{2,4}))?/i);
   if (tglMatch) {
@@ -508,6 +541,9 @@ function extractTransactionItems(text) {
     protectedTokens.push(val);
     return token;
   }
+
+  // Tanggal dengan nama bulan: '25 oktober', 'tanggal 25 oktober 2026', 'tgl 25 okt'
+  workingText = workingText.replace(/(?:pada\s+)?(?:tanggal|tgl)?\s*[0-9]{1,2}\s+(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|ags|agt|sep|sept|okt|nov|des)(?:\s+[0-9]{2,4})?/gi, (m) => protect(m));
 
   // Tanggal: 'pada tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21 okt'
   workingText = workingText.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2}(?:\s*(?:[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?|[a-zA-Z]+))?)/gi, (m) => protect(m));
@@ -617,6 +653,7 @@ function extractTransactionItems(text) {
 
     // Hapus frasa tanggal/waktu relatif dari deskripsi agar tidak masuk nama transaksi
     // Urutan penting: dari yang paling spesifik ke paling umum
+    description = description.replace(/(?:pada\s+)?(?:tanggal|tgl)?\s*[0-9]{1,2}\s+(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|ags|agt|sep|sept|okt|nov|des)(?:\s+[0-9]{2,4})?/gi, '');
     description = description.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?)?/gi, '');
     description = description.replace(/\b[0-9]{1,2}[\/\-][0-9]{1,2}(?:[\/\-][0-9]{2,4})?\b/g, '');
     description = description.replace(/\b[0-9]+\s*hari\s*(?:yang\s+)?lalu\b/gi, '');
