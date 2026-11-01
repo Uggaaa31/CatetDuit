@@ -27,7 +27,7 @@ const CATEGORY_KEYWORDS = {
     'rokok', 'sebungkus rokok', 'batangan rokok', 'tembakau', 'cerutu', 'korek', 'korek api', 'tokai', 'cricket',
     'surya', 'gudang garam', 'sampoerna', 'mild', 'marlboro', 'magnum', 'esse', 'djarum', 'djarum super',
     'djarum coklat', 'camel', 'filter', 'kretek', 'la lights', 'u mild', 'clas mild', 'pro mild', 'dunhill',
-    'lucky strike', 'diplomat', 'wismilak', 'forte', 'sin', 'win', 'scorpion', 'apache',
+    'lucky strike', 'diplomat', 'wismilak', 'forte', 'rokok sin', 'rokok win', 'scorpion', 'apache',
     // Vape & pods
     'vape', 'vapor', 'liquid', 'e-liquid', 'saltnic', 'freebase', 'pod', 'coil', 'cartridge', 'mod', 'rda', 'rta',
     'relx', 'juul', 'iqos', 'heets', 'terea', 'kapas vape', 'cotton vape'
@@ -149,46 +149,50 @@ function detectCategory(text, type = 'expense', amount = 0) {
 
   const lower = text.toLowerCase().trim();
 
-  // 1. Cek kecocokan langsung kata kunci (Exact substring match)
+  // 1. Cek Kata Kunci dengan Word Boundary & Prioritaskan Keyword Terpanjang (Longest Match)
+  // Menghindari substring false match (misal: 'sin' di dalam 'bensin' tidak boleh mencocokkan 'Rokok')
+  let bestMatchCategory = null;
+  let maxKeywordLength = 0;
+
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
     for (const kw of keywords) {
-      if (lower.includes(kw)) {
-        return category;
+      const escapedKw = kw.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      // Pastikan kata berdiri sendiri (dikelilingi spasi/tanda baca/awal/akhir teks, bukan bagian dari kata lain)
+      const regex = new RegExp(`(?:^|[^a-z0-9])${escapedKw}(?:[^a-z0-9]|$)`, 'i');
+      if (regex.test(lower)) {
+        if (kw.length > maxKeywordLength) {
+          maxKeywordLength = kw.length;
+          bestMatchCategory = category;
+        }
       }
     }
   }
 
-  // 2. Token Matching (Pecah per kata)
-  const tokens = lower.split(/[^a-zA-Z0-9]+/).filter((t) => t.length >= 3);
-  for (const token of tokens) {
-    for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-      if (keywords.includes(token)) {
-        return category;
-      }
-    }
+  if (bestMatchCategory) {
+    return bestMatchCategory;
   }
 
-  // 3. Heuristic Rules (Karakteristik kata bahasa Indonesia)
-  if (/makan|minum|pedas|manis|asin|goreng|bakar|rebus|kuah|paket|porsi|bungkus|resto|warung|kedai|dapur/i.test(lower)) {
+  // 2. Heuristic Rules (Karakteristik kata bahasa Indonesia)
+  if (/\b(?:makan|minum|pedas|manis|asin|goreng|bakar|rebus|kuah|paket|porsi|bungkus|resto|warung|kedai|dapur)\b/i.test(lower)) {
     return 'Makanan & Minuman';
   }
-  if (/rumah|kamar|kontrakan|iuran|tagihan|pln|pdam|wifi|lpg|gas/i.test(lower)) {
+  if (/\b(?:rumah|kamar|kontrakan|iuran|tagihan|pln|pdam|wifi|lpg|gas)\b/i.test(lower)) {
     return 'Listrik, Air & Wifi';
   }
-  if (/motor|mobil|jalan|kendaraan|transport|ojek|supir|driver|bengkel|mesin|roda/i.test(lower)) {
+  if (/\b(?:motor|mobil|jalan|kendaraan|transport|ojek|supir|driver|bengkel|mesin|roda)\b/i.test(lower)) {
     return 'Bensin & Transportasi';
   }
-  if (/toko|beli|belanja|minimarket|swalayan|pasar|mall|barang|alat|peralatan|kebersihan/i.test(lower)) {
+  if (/\b(?:toko|beli|belanja|minimarket|swalayan|pasar|mall|barang|alat|peralatan|kebersihan)\b/i.test(lower)) {
     return 'Belanja Bulanan';
   }
-  if (/santai|main|kumpul|jalan|rekreasi|kafe|kopi/i.test(lower)) {
+  if (/\b(?:santai|main|kumpul|jalan|rekreasi|kafe|kopi)\b/i.test(lower)) {
     return 'Nongkrong & Hiburan';
   }
-  if (/ortu|keluarga|ibu|ayah|mama|papa|adik|kakak|anak|sedekah|infaq/i.test(lower)) {
+  if (/\b(?:ortu|keluarga|ibu|ayah|mama|papa|adik|kakak|anak|sedekah|infaq)\b/i.test(lower)) {
     return 'Kirim Keluarga';
   }
 
-  // 4. Default Fallback Cerdas (Tidak akan pernah keluar 'Lain-lain')
+  // 3. Default Fallback Cerdas
   if (amount > 0 && amount <= 35000) {
     return 'Makanan & Minuman';
   }
@@ -664,7 +668,108 @@ function parseMessage(rawText) {
     lower === 'hapus semua data' ||
     lower === 'hapus semua transaksi'
   ) {
-    return { isCommand: true, action: 'reset_all_data' };
+    return { isCommand: true, action: 'request_reset_all_data' };
+  }
+
+  if (
+    lower === 'konfirmasi restart' ||
+    lower === 'konfirmasi reset' ||
+    lower === 'ya restart' ||
+    lower === 'lanjut restart'
+  ) {
+    return { isCommand: true, action: 'confirm_reset_all_data' };
+  }
+
+  // --- Quick Edit Transaksi Terakhir ---
+  const editNominalMatch = text.match(/^(?:ubah|ganti|edit)\s+nominal\s+(?:jadi\s+|menjadi\s+)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)$/i);
+  if (editNominalMatch) {
+    const newAmount = parseNominal(editNominalMatch[1]);
+    if (newAmount && newAmount > 0) {
+      return { isCommand: true, action: 'edit_last_tx', field: 'amount', value: newAmount };
+    }
+  }
+
+  const editCategoryMatch = text.match(/^(?:ubah|ganti|edit)\s+kategori\s+(?:jadi\s+|menjadi\s+)?([a-zA-Z0-9\s,&]+)$/i);
+  if (editCategoryMatch) {
+    return { isCommand: true, action: 'edit_last_tx', field: 'category', value: editCategoryMatch[1].trim() };
+  }
+
+  const editDescMatch = text.match(/^(?:ubah|ganti|edit)\s+(?:keterangan|catatan|deskripsi)\s+(?:jadi\s+|menjadi\s+)?(.+)$/i);
+  if (editDescMatch) {
+    return { isCommand: true, action: 'edit_last_tx', field: 'description', value: editDescMatch[1].trim() };
+  }
+
+  const editMerchantMatch = text.match(/^(?:ubah|ganti|edit)\s+(?:toko|merchant)\s+(?:jadi\s+|menjadi\s+)?(.+)$/i);
+  if (editMerchantMatch) {
+    return { isCommand: true, action: 'edit_last_tx', field: 'merchantName', value: editMerchantMatch[1].trim() };
+  }
+
+  // --- Tagihan Rutin & Subscription ---
+  if (lower === 'tagihan' || lower === 'daftar tagihan' || lower === 'cek tagihan' || lower === 'langganan') {
+    return { isCommand: true, action: 'list_bills' };
+  }
+
+  const addBillMatch = text.match(/^(?:tambah|buat|add)\s+tagihan\s+([A-Za-z0-9\s.&-]+?)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s+(?:tgl|tanggal)?\s*([0-9]{1,2})$/i);
+  if (addBillMatch) {
+    const billName = addBillMatch[1].trim();
+    const billAmount = parseNominal(addBillMatch[2]);
+    const billDueDay = parseInt(addBillMatch[3], 10);
+    if (billAmount && billDueDay >= 1 && billDueDay <= 31) {
+      return { isCommand: true, action: 'add_bill', name: billName, amount: billAmount, dueDay: billDueDay };
+    }
+  }
+
+  const payBillMatch = text.match(/^bayar\s+tagihan\s+(.+)$/i);
+  if (payBillMatch) {
+    return { isCommand: true, action: 'pay_bill', name: payBillMatch[1].trim() };
+  }
+
+  const removeBillMatch = text.match(/^hapus\s+tagihan\s+(.+)$/i);
+  if (removeBillMatch) {
+    return { isCommand: true, action: 'remove_bill', name: removeBillMatch[1].trim() };
+  }
+
+  // --- Hutang & Piutang ---
+  if (
+    lower === 'hutang' ||
+    lower === 'piutang' ||
+    lower === 'cek hutang' ||
+    lower === 'cek piutang' ||
+    lower === 'buku hutang' ||
+    lower === 'daftar hutang'
+  ) {
+    return { isCommand: true, action: 'list_debts' };
+  }
+
+  // Piutang (orang pinjam ke kita)
+  const loanMatch = text.match(/^(?:pinjamkan|kasih\s+pinjam|piutang)\s+([a-zA-Z\s]+?)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)(?:\s+(.+))?$/i);
+  if (loanMatch) {
+    const personName = loanMatch[1].trim();
+    const loanAmount = parseNominal(loanMatch[2]);
+    const loanDesc = loanMatch[3] ? loanMatch[3].trim() : '';
+    if (loanAmount && loanAmount > 0) {
+      return { isCommand: true, action: 'add_debt', debtType: 'loan', personName, amount: loanAmount, description: loanDesc };
+    }
+  }
+
+  // Hutang (kita pinjam ke orang)
+  const debtMatch = text.match(/^(?:hutang\s+(?:ke\s+)?|pinjam\s+(?:dari\s+|ke\s+)?)([a-zA-Z\s]+?)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)(?:\s+(.+))?$/i);
+  if (debtMatch) {
+    const personName = debtMatch[1].trim();
+    const debtAmount = parseNominal(debtMatch[2]);
+    const debtDesc = debtMatch[3] ? debtMatch[3].trim() : '';
+    if (debtAmount && debtAmount > 0) {
+      return { isCommand: true, action: 'add_debt', debtType: 'debt', personName, amount: debtAmount, description: debtDesc };
+    }
+  }
+
+  // Pelunasan hutang / piutang
+  const settleMatch = text.match(/^(?:lunas\s+(?:hutang|piutang)?\s*([a-zA-Z\s]+)|([a-zA-Z\s]+)\s+lunas)$/i);
+  if (settleMatch) {
+    const personName = (settleMatch[1] || settleMatch[2]).trim();
+    if (personName && !['semua', 'tagihan'].includes(personName.toLowerCase())) {
+      return { isCommand: true, action: 'settle_debt', personName };
+    }
   }
 
   if (lower === 'reset budget' || lower === 'reset anggaran' || lower === 'default budget') {

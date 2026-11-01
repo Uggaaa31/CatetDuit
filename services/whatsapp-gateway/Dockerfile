@@ -6,7 +6,8 @@ RUN apk add --no-cache \
     git \
     python3 \
     make \
-    g++
+    g++ \
+    tzdata
 
 COPY package*.json ./
 

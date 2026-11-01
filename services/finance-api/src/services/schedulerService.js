@@ -13,6 +13,7 @@ const {
 
 const sentNightlyReminders = new Set();
 const sentAllocationReminders22 = new Set();
+const sentBillReminders = new Set();
 
 /**
  * Otomatis konsolidasi data transaksi yang tersimpan di bawah LID ke nomor HP utama
@@ -416,6 +417,44 @@ function startRecurringScheduler() {
           if (!sentAllocationReminders22.has(key)) {
             await executeAllocationReminder22(userNumber, false);
             sentAllocationReminders22.add(key);
+          }
+        }
+      }
+
+      // 2b. Eksekusi Pengingat Tagihan Rutin Jatuh Tempo setiap jam 09:00 pagi
+      if (hour === 9 && minute <= 15) {
+        const todayStr = now.format('YYYY-MM-DD');
+        for (const userNumber of users) {
+          const key = `${userNumber}_bills_${todayStr}`;
+          if (!sentBillReminders.has(key)) {
+            try {
+              const dueBills = await prisma.bill.findMany({
+                where: {
+                  userNumber,
+                  isActive: true,
+                  dueDay: { in: [date, date + 1] },
+                },
+              });
+
+              if (dueBills.length > 0) {
+                const billLines = dueBills
+                  .map((b) => {
+                    const timing = b.dueDay === date ? 'Hari Ini' : 'Besok';
+                    return `• *${b.name}*: ${formatRupiah(b.amount)} (Jatuh tempo *${timing}*)`;
+                  })
+                  .join('\n');
+
+                const billAlert =
+                  `🔔 *PENGINGAT JATUH TEMPO TAGIHAN RUTIN!*\n\n` +
+                  billLines +
+                  `\n\n💡 _Ketik \`bayar tagihan [nama]\` untuk otomatis mencatat pelunasan ke pengeluaran._`;
+
+                await sendWhatsAppMessage(userNumber, billAlert);
+              }
+            } catch (billErr) {
+              console.error(`[scheduler] Error cek tagihan untuk ${userNumber}:`, billErr.message);
+            }
+            sentBillReminders.add(key);
           }
         }
       }

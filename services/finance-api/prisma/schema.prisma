@@ -35,3 +35,33 @@ model Budget {
   @@unique([userNumber, category])
   @@index([userNumber])
 }
+
+model Bill {
+  id          String   @id @default(uuid())
+  name        String
+  amount      Float
+  dueDay      Int      // Tanggal jatuh tempo bulanan (1-31)
+  category    String   @default("Listrik, Air & Wifi")
+  userNumber  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userNumber])
+}
+
+model Debt {
+  id          String    @id @default(uuid())
+  type        String    // "debt" (kita berhutang) | "loan" (piutang / orang berhutang ke kita)
+  personName  String
+  amount      Float
+  description String?
+  isPaid      Boolean   @default(false)
+  paidAt      DateTime?
+  userNumber  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userNumber])
+  @@index([isPaid])
+}

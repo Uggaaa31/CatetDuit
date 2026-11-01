@@ -85,7 +85,7 @@ def extract_with_gemini(image_path: str) -> dict:
     - Jika ini struk belanja fisik yang memiliki daftar barang belanjaan, masukkan seluruh item ke dalam array items.
     """
 
-    models_to_try = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-2.5-flash-lite"]
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
     last_err = None
 
     for m_name in models_to_try:
