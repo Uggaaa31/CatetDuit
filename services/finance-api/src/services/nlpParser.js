@@ -380,23 +380,99 @@ function parsePocketShift(rawText) {
 
 function extractCustomDate(text) {
   if (!text) return null;
-  // Format: 'tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21-10-2026'
-  const match = text.match(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2})(?:\s*[-/]\s*([0-9]{1,2}))?(?:\s*[-/]\s*([0-9]{2,4}))?/i);
-  if (!match) return null;
-  const day = parseInt(match[1], 10);
-  if (day >= 1 && day <= 31) {
-    const now = new Date();
-    let month = now.getMonth();
-    let year = now.getFullYear();
-    if (match[2]) {
-      month = parseInt(match[2], 10) - 1;
+  const now = new Date();
+  const lower = text.toLowerCase();
+
+  // 1. Relatif: kemarin / kemaren
+  if (/\bkemarin\b|\bkemaren\b/i.test(lower)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  // 2. Relatif: tadi / barusan / tadi pagi / tadi siang / tadi malam (= hari ini)
+  if (/\btadi\b|\bbarusan\b|\bhabis\b|\babis\b/i.test(lower)) {
+    const d = new Date(now);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  // 3. Relatif dengan hari: 2 hari lalu, 3 hari yang lalu, beberapa hari lalu
+  const daysAgoMatch = lower.match(/([0-9]+|beberapa|dua|tiga|empat|lima|seminggu)\s*hari\s*(?:yang\s+)?lalu/i);
+  if (daysAgoMatch) {
+    const wordMap = { beberapa: 3, dua: 2, tiga: 3, empat: 4, lima: 5, seminggu: 7 };
+    const daysBack = parseInt(daysAgoMatch[1], 10) || wordMap[daysAgoMatch[1].toLowerCase()] || 3;
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysBack);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  // 4. Relatif: minggu lalu
+  if (/\bminggu\s+lalu\b/i.test(lower)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  // 5. Nama hari dalam seminggu: Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu
+  const hariMap = {
+    senin: 1, selasa: 2, rabu: 3, kamis: 4, jumat: 5, sabtu: 6, minggu: 0,
+    monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0,
+  };
+  const hariMatch = lower.match(/\b(hari\s+)?(senin|selasa|rabu|kamis|jumat|sabtu|minggu|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+  if (hariMatch) {
+    const targetDay = hariMap[hariMatch[2].toLowerCase()];
+    const d = new Date(now);
+    let diff = d.getDay() - targetDay;
+    if (diff <= 0) diff += 7; // Ambil yang lalu
+    d.setDate(d.getDate() - diff);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  // 6. Format: 'tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21-10-2026'
+  const tglMatch = text.match(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2})(?:\s*[-/]\s*([0-9]{1,2}))?(?:\s*[-/]\s*([0-9]{2,4}))?/i);
+  if (tglMatch) {
+    const day = parseInt(tglMatch[1], 10);
+    if (day >= 1 && day <= 31) {
+      let month = now.getMonth();
+      let year = now.getFullYear();
+      if (tglMatch[2]) {
+        // Bulan eksplisit: gunakan apa adanya
+        month = parseInt(tglMatch[2], 10) - 1;
+      } else {
+        // Bulan tidak disebutkan: jika tanggal masih di depan (belum lewat), pakai bulan lalu
+        if (day > now.getDate()) {
+          month = now.getMonth() - 1;
+          if (month < 0) { month = 11; year -= 1; }
+        }
+      }
+      if (tglMatch[3]) {
+        year = parseInt(tglMatch[3], 10);
+        if (year < 100) year += 2000;
+      }
+      return new Date(year, month, day, 12, 0, 0);
     }
-    if (match[3]) {
-      year = parseInt(match[3], 10);
+  }
+
+  // 7. Format tanggal langsung: 21/10, 21-10, 21/10/2026
+  const shortDateMatch = text.match(/\b([0-9]{1,2})[\/\-]([0-9]{1,2})(?:[\/\-]([0-9]{2,4}))?\b/);
+  if (shortDateMatch) {
+    const day = parseInt(shortDateMatch[1], 10);
+    const month = parseInt(shortDateMatch[2], 10) - 1;
+    let year = now.getFullYear();
+    if (shortDateMatch[3]) {
+      year = parseInt(shortDateMatch[3], 10);
       if (year < 100) year += 2000;
     }
-    return new Date(year, month, day, 12, 0, 0);
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      return new Date(year, month, day, 12, 0, 0);
+    }
   }
+
   return null;
 }
 
@@ -435,6 +511,16 @@ function extractTransactionItems(text) {
 
   // Tanggal: 'pada tanggal 21', 'tgl 21', 'tanggal 21/10', 'tanggal 21 okt'
   workingText = workingText.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*([0-9]{1,2}(?:\s*(?:[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?|[a-zA-Z]+))?)/gi, (m) => protect(m));
+
+  // Kata relatif tanggal: 'kemarin', 'tadi', 'barusan', 'habis', '2 hari lalu', 'minggu lalu'
+  // HARUS dilindungi SEBELUM nominalRegex agar angkanya tidak dianggap nominal
+  workingText = workingText.replace(/\b[0-9]+\s*hari\s*(?:yang\s+)?lalu\b/gi, (m) => protect(m));
+  workingText = workingText.replace(/\bminggu\s+lalu\b/gi, (m) => protect(m));
+  workingText = workingText.replace(/\b(?:kemarin|kemaren)\b/gi, (m) => protect(m));
+  workingText = workingText.replace(/\btadi\s*(?:pagi|siang|sore|malam)?\b/gi, (m) => protect(m));
+  workingText = workingText.replace(/\b(?:barusan|habis|abis)\b/gi, (m) => protect(m));
+  // Nama hari: 'Senin', 'hari Jumat', dst
+  workingText = workingText.replace(/\b(?:hari\s+)?(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, (m) => protect(m));
 
   // Jam / waktu: 'jam 13:00', 'pukul 21'
   workingText = workingText.replace(/(?:jam|pukul)\s*([0-9]{1,2}(?:[:.][0-9]{2})?)/gi, (m) => protect(m));
@@ -526,8 +612,21 @@ function extractTransactionItems(text) {
     // Kembalikan token asli (misal: 'pada tanggal 21')
     description = restoreTokens(description).trim();
 
-    // Deteksi tanggal kustom jika ada dalam teks
+    // Deteksi tanggal kustom dari deskripsi (sudah direstorasi) atau teks asli
     const customDate = extractCustomDate(description) || extractCustomDate(text);
+
+    // Hapus frasa tanggal/waktu relatif dari deskripsi agar tidak masuk nama transaksi
+    // Urutan penting: dari yang paling spesifik ke paling umum
+    description = description.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?)?/gi, '');
+    description = description.replace(/\b[0-9]{1,2}[\/\-][0-9]{1,2}(?:[\/\-][0-9]{2,4})?\b/g, '');
+    description = description.replace(/\b[0-9]+\s*hari\s*(?:yang\s+)?lalu\b/gi, '');
+    description = description.replace(/\bminggu\s+lalu\b/gi, '');
+    description = description.replace(/\b(?:kemarin|kemaren)\b/gi, '');
+    description = description.replace(/\btadi\s*(?:pagi|siang|sore|malam)?\b/gi, '');
+    description = description.replace(/\b(?:barusan|habis|abis)\b/gi, '');
+    description = description.replace(/\b(?:hari\s+)?(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '');
+    // Bersihkan spasi berlebih dan tanda baca di ujung
+    description = description.replace(/\s{2,}/g, ' ').replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim();
 
     if (!description) {
       description = isIncome ? 'Pemasukan' : 'Pengeluaran';
