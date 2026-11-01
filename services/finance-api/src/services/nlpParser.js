@@ -779,18 +779,43 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'confirm_reset_all_data' };
   }
 
-  // --- Quick Edit Transaksi Terakhir ---
+  // --- Edit Transaksi (Quick Edit Terakhir & Targeted Edit Berdasarkan Kata Kunci / Bulan) ---
+
+  // 1. Targeted Edit Kategori Berdasarkan Kata Kunci / Bulan
+  // Pola A: "Belanja bulanan galon oktober ubah kategori ke makanan dan minuman" / "galon ubah kategori ke makanan"
+  const editTargetedCatMatchA = text.match(/^(?:tolong\s+)?(.+?)\s+(?:tolong\s+)?(?:ubah|ganti|edit)\s+kategori(?:\s+transaksi)?\s+(?:jadi|ke|menjadi)\s+([a-zA-Z0-9\s,&]+)$/i);
+  if (editTargetedCatMatchA) {
+    const query = editTargetedCatMatchA[1].trim();
+    const catInput = editTargetedCatMatchA[2].trim();
+    // Pastikan query bukan kata kosong atau hanya "transaksi"
+    if (query && !['transaksi', 'catatan', 'ini', 'itu'].includes(query.toLowerCase())) {
+      return { isCommand: true, action: 'edit_tx_category_by_query', query, categoryInput: catInput };
+    }
+  }
+
+  // Pola B: "ubah kategori galon oktober ke makanan dan minuman" / "ubah kategori galon jadi makanan"
+  const editTargetedCatMatchB = text.match(/^(?:tolong\s+)?(?:ubah|ganti|edit)\s+kategori(?:\s+transaksi)?\s+(.+?)\s+(?:jadi|ke|menjadi)\s+([a-zA-Z0-9\s,&]+)$/i);
+  if (editTargetedCatMatchB) {
+    const query = editTargetedCatMatchB[1].trim();
+    const catInput = editTargetedCatMatchB[2].trim();
+    if (query && !['transaksi', 'catatan', 'ini', 'itu'].includes(query.toLowerCase())) {
+      return { isCommand: true, action: 'edit_tx_category_by_query', query, categoryInput: catInput };
+    }
+  }
+
+  // 2. Quick Edit Kategori Transaksi Terakhir: "ubah kategori makanan & minuman" / "ubah kategori ke bensin"
+  const editCategoryMatch = text.match(/^(?:tolong\s+)?(?:ubah|ganti|edit)\s+kategori(?:\s+transaksi)?\s+(?:jadi\s+|menjadi\s+|ke\s+)?([a-zA-Z0-9\s,&]+)$/i);
+  if (editCategoryMatch) {
+    return { isCommand: true, action: 'edit_last_tx', field: 'category', value: editCategoryMatch[1].trim() };
+  }
+
+  // 3. Quick Edit Nominal Transaksi Terakhir
   const editNominalMatch = text.match(/^(?:ubah|ganti|edit)\s+nominal\s+(?:jadi\s+|menjadi\s+)?([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)$/i);
   if (editNominalMatch) {
     const newAmount = parseNominal(editNominalMatch[1]);
     if (newAmount && newAmount > 0) {
       return { isCommand: true, action: 'edit_last_tx', field: 'amount', value: newAmount };
     }
-  }
-
-  const editCategoryMatch = text.match(/^(?:ubah|ganti|edit)\s+kategori\s+(?:jadi\s+|menjadi\s+)?([a-zA-Z0-9\s,&]+)$/i);
-  if (editCategoryMatch) {
-    return { isCommand: true, action: 'edit_last_tx', field: 'category', value: editCategoryMatch[1].trim() };
   }
 
   const editDescMatch = text.match(/^(?:ubah|ganti|edit)\s+(?:keterangan|catatan|deskripsi)\s+(?:jadi\s+|menjadi\s+)?(.+)$/i);

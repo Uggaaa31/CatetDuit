@@ -258,7 +258,10 @@ function matchCategory(input) {
     'makan': 'Makanan & Minuman',
     'makanan': 'Makanan & Minuman',
     'minum': 'Makanan & Minuman',
+    'makanan & minuman': 'Makanan & Minuman',
+    'makanan dan minuman': 'Makanan & Minuman',
     'makan & minum': 'Makanan & Minuman',
+    'makan dan minum': 'Makanan & Minuman',
     'uang makan': 'Makanan & Minuman',
     'dompet makanan': 'Makanan & Minuman',
     'kantong makanan': 'Makanan & Minuman',
@@ -266,23 +269,30 @@ function matchCategory(input) {
     'rokok': 'Rokok & Vape',
     'vape': 'Rokok & Vape',
     'rokok & vape': 'Rokok & Vape',
+    'rokok dan vape': 'Rokok & Vape',
 
     'bensin': 'Bensin & Transportasi',
     'transport': 'Bensin & Transportasi',
     'transportasi': 'Bensin & Transportasi',
     'bensin & transportasi': 'Bensin & Transportasi',
+    'bensin dan transportasi': 'Bensin & Transportasi',
 
     'kuota': 'Kuota & Internet',
     'internet': 'Kuota & Internet',
     'pulsa': 'Kuota & Internet',
     'kuota & internet': 'Kuota & Internet',
+    'kuota dan internet': 'Kuota & Internet',
 
     'listrik': 'Listrik, Air & Wifi',
     'air': 'Listrik, Air & Wifi',
     'wifi': 'Listrik, Air & Wifi',
     'tagihan': 'Listrik, Air & Wifi',
     'pln': 'Listrik, Air & Wifi',
+    'pdam': 'Listrik, Air & Wifi',
     'listrik, air & wifi': 'Listrik, Air & Wifi',
+    'listrik air wifi': 'Listrik, Air & Wifi',
+    'listrik dan air': 'Listrik, Air & Wifi',
+    'listrik air dan wifi': 'Listrik, Air & Wifi',
 
     'bulanan': 'Belanja Bulanan',
     'belanja': 'Belanja Bulanan',
@@ -296,14 +306,17 @@ function matchCategory(input) {
     'dana darurat': 'Dana Darurat',
 
     'tabungan': 'Tabungan',
+    'nabung': 'Tabungan',
     'investasi': 'Tabungan',
     'tabungan & investasi': 'Tabungan',
+    'tabungan dan investasi': 'Tabungan',
 
     'nongkrong': 'Nongkrong & Hiburan',
     'hiburan': 'Nongkrong & Hiburan',
     'ngopi': 'Nongkrong & Hiburan',
     'cafe': 'Nongkrong & Hiburan',
     'nongkrong & hiburan': 'Nongkrong & Hiburan',
+    'nongkrong dan hiburan': 'Nongkrong & Hiburan',
 
     'keluarga': 'Kirim Keluarga',
     'ortu': 'Kirim Keluarga',
@@ -317,9 +330,18 @@ function matchCategory(input) {
   if (aliases[clean]) return aliases[clean];
   if (aliases[rawLower]) return aliases[rawLower];
 
+  const normalizedDan = clean.replace(/\bdan\b/g, '&').replace(/\s+/g, ' ').trim();
+  if (aliases[normalizedDan]) return aliases[normalizedDan];
+
   const allCats = Object.keys(DEFAULT_BUDGETS);
   for (const cat of allCats) {
-    if (cat.toLowerCase().includes(clean) || clean.includes(cat.toLowerCase())) {
+    const catLower = cat.toLowerCase();
+    const catNorm = catLower.replace(/&/g, 'dan');
+    if (
+      catLower.includes(clean) || clean.includes(catLower) ||
+      catNorm.includes(clean) || clean.includes(catNorm) ||
+      catLower.includes(normalizedDan) || normalizedDan.includes(catLower)
+    ) {
       return cat;
     }
   }

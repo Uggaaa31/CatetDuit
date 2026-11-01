@@ -13,6 +13,7 @@ const {
   transferPocketBudget,
   getPayCycleRange,
   getDualCycleGuide,
+  matchCategory,
   DEFAULT_BUDGETS,
 } = require('../services/budgetService');
 const {
@@ -45,6 +46,93 @@ function formatRupiah(number) {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(number);
+}
+
+function parseSearchQuery(query) {
+  let text = query.trim().toLowerCase();
+
+  const months = {
+    januari: 0, jan: 0,
+    februari: 1, feb: 1,
+    maret: 2, mar: 2,
+    april: 3, apr: 3,
+    mei: 4,
+    juni: 5, jun: 5,
+    juli: 6, jul: 6,
+    agustus: 7, ags: 7, agt: 7,
+    september: 8, sep: 8, sept: 8,
+    oktober: 9, okt: 9,
+    november: 10, nov: 10,
+    desember: 11, des: 11,
+  };
+
+  let targetMonth = null;
+  let targetYear = dayjs().year();
+
+  for (const [mName, mIdx] of Object.entries(months)) {
+    const mRegex = new RegExp(`(?:^|[^a-z])${mName}(?:[^a-z]|$)`, 'i');
+    if (mRegex.test(text)) {
+      targetMonth = mIdx;
+      if (targetMonth > dayjs().month()) {
+        targetYear = dayjs().year() - 1;
+      }
+      text = text.replace(mRegex, ' ').trim();
+      break;
+    }
+  }
+
+  const categoryAliases = {
+    'makanan & minuman': 'Makanan & Minuman',
+    'makanan dan minuman': 'Makanan & Minuman',
+    'makan': 'Makanan & Minuman',
+    'rokok & vape': 'Rokok & Vape',
+    'rokok dan vape': 'Rokok & Vape',
+    'bensin & transportasi': 'Bensin & Transportasi',
+    'bensin dan transportasi': 'Bensin & Transportasi',
+    'kuota & internet': 'Kuota & Internet',
+    'kuota dan internet': 'Kuota & Internet',
+    'listrik, air & wifi': 'Listrik, Air & Wifi',
+    'listrik air wifi': 'Listrik, Air & Wifi',
+    'listrik dan air': 'Listrik, Air & Wifi',
+    'belanja bulanan': 'Belanja Bulanan',
+    'belanja': 'Belanja Bulanan',
+    'kirim keluarga': 'Kirim Keluarga',
+    'dana darurat': 'Dana Darurat',
+    'tabungan': 'Tabungan',
+    'nongkrong & hiburan': 'Nongkrong & Hiburan',
+    'nongkrong dan hiburan': 'Nongkrong & Hiburan',
+  };
+
+  let detectedOldCat = null;
+  for (const [alias, realCat] of Object.entries(categoryAliases)) {
+    const escaped = alias.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    const cRegex = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, 'i');
+    if (cRegex.test(text)) {
+      detectedOldCat = realCat;
+      text = text.replace(cRegex, ' ').trim();
+      break;
+    }
+  }
+
+  text = text.replace(/(?:^|[^a-z0-9])(transaksi|catatan|pos|pada|di|bulan|yang|untuk|uang)(?:[^a-z0-9]|$)/gi, ' ').trim();
+  text = text.replace(/\s{2,}/g, ' ').trim();
+
+  let startDate = null;
+  let endDate = null;
+  if (targetMonth !== null) {
+    startDate = dayjs().year(targetYear).month(targetMonth).startOf('month').toDate();
+    endDate = dayjs().year(targetYear).month(targetMonth).endOf('month').toDate();
+  }
+
+  return {
+    original: query,
+    targetMonth,
+    targetYear,
+    startDate,
+    endDate,
+    detectedOldCat,
+    keyword: text || null,
+  };
 }
 
 function getPeriodRange(period) {
@@ -508,10 +596,11 @@ router.post('/webhook', async (req, res) => {
 • \`+gaji 4.1jt\`
 • \`+pemasukan 500rb booster\`
 
-*3. Edit Cepat & Pembatalan:*
+*3. Edit & Pembatalan Transaksi:*
 • \`ubah nominal 120rb\` (ganti nominal transaksi terakhir)
 • \`ubah kategori bensin\` (ganti kategori transaksi terakhir)
 • \`ubah catatan makan siang\` (ganti keterangan transaksi)
+• \`galon ubah kategori ke makanan dan minuman\` (edit transaksi lama spesifik)
 • \`batal\` (membatalkan transaksi terakhir)
 
 *4. Pindah Dana & Alokasi Rekening:*
@@ -682,8 +771,9 @@ router.post('/webhook', async (req, res) => {
           changeNote = `Nominal diubah dari *${formatRupiah(oldAmt)}* ➔ *${formatRupiah(value)}*`;
         } else if (field === 'category') {
           const oldCat = lastTx.category;
-          updateData.category = value;
-          changeNote = `Kategori diubah dari *${oldCat}* ➔ *${value}*`;
+          const targetCategory = matchCategory(value) || value;
+          updateData.category = targetCategory;
+          changeNote = `Kategori diubah dari *${oldCat}* ➔ *${targetCategory}*`;
         } else if (field === 'description') {
           const oldDesc = lastTx.description;
           updateData.description = value;
@@ -722,6 +812,101 @@ router.post('/webhook', async (req, res) => {
           `\n\n_Ketik *batal* jika ingin membatalkan, atau *budget* untuk cek status._`;
 
         return await sendWhatsAppMessage(from, editReply);
+      }
+
+      // 2g-2b. EDIT KATEGORI DENGAN PENCARIAN (KATA KUNCI / BULAN / KATEGORI LAMA)
+      // Contoh: "Belanja bulanan galon oktober ubah kategori ke makanan dan minuman"
+      // Contoh: "galon ubah kategori ke makanan dan minuman"
+      if (parsed.action === 'edit_tx_category_by_query') {
+        const targetCategory = matchCategory(parsed.categoryInput);
+        if (!targetCategory) {
+          const catList = Object.keys(DEFAULT_BUDGETS).map((c) => `• ${c}`).join('\n');
+          return await sendWhatsAppMessage(
+            from,
+            `⚠️ Kategori *'${parsed.categoryInput}'* tidak dikenali.\n\nPilih salah satu dari 10 kantong resmi berikut:\n${catList}`
+          );
+        }
+
+        const filter = parseSearchQuery(parsed.query);
+        console.log(`[edit_tx_category_by_query] Query: "${parsed.query}" -> Filter:`, filter);
+
+        let where = { userNumber };
+
+        if (filter.startDate && filter.endDate) {
+          where.createdAt = { gte: filter.startDate, lte: filter.endDate };
+        }
+
+        if (filter.detectedOldCat) {
+          where.category = filter.detectedOldCat;
+        }
+
+        if (filter.keyword) {
+          where.OR = [
+            { description: { contains: filter.keyword, mode: 'insensitive' } },
+            { merchantName: { contains: filter.keyword, mode: 'insensitive' } },
+          ];
+        }
+
+        let matchingTxs = await prisma.transaction.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        });
+
+        // Fallback 1: Jika tidak ditemukan dan ada detectedOldCat, coba lepaskan filter kategori lama
+        if (matchingTxs.length === 0 && filter.detectedOldCat && filter.keyword) {
+          delete where.category;
+          matchingTxs = await prisma.transaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          });
+        }
+
+        // Fallback 2: Jika masih belum ketemu dan ada filter waktu, coba cari tanpa batasan waktu
+        if (matchingTxs.length === 0 && where.createdAt && filter.keyword) {
+          delete where.createdAt;
+          matchingTxs = await prisma.transaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          });
+        }
+
+        if (matchingTxs.length === 0) {
+          return await sendWhatsAppMessage(
+            from,
+            `⚠️ Tidak ditemukan transaksi yang cocok dengan kata kunci *"${parsed.query}"*.\n\n` +
+            `_Tips: Pastikan nama barang/keterangan yang pernah dicatat sudah sesuai (contoh: "ubah kategori galon ke makanan dan minuman")._`
+          );
+        }
+
+        const txToUpdate = matchingTxs[0];
+        const oldCategory = txToUpdate.category;
+
+        const updatedTx = await prisma.transaction.update({
+          where: { id: txToUpdate.id },
+          data: { category: targetCategory },
+        });
+
+        let budgetAlert = '';
+        if (updatedTx.type === 'expense') {
+          const budgetStatus = await checkBudgetStatus(userNumber, targetCategory);
+          if (budgetStatus.hasBudget) {
+            budgetAlert = `\n\n📊 *Sisa kuota ${targetCategory}:* ${formatRupiah(budgetStatus.remaining)} (Terpakai: ${formatRupiah(budgetStatus.totalSpent)})`;
+          }
+        }
+
+        const reply =
+          `✏️ *Kategori Transaksi Berhasil Diperbarui!*\n\n` +
+          `• 📦 *Barang/Catatan:* ${updatedTx.description}\n` +
+          `• 🏷️ *Kategori:* ${oldCategory} ➔ *${targetCategory}*\n` +
+          `• 💰 *Nominal:* ${formatRupiah(updatedTx.amount)}\n` +
+          `• 📅 *Tanggal:* ${dayjs(updatedTx.createdAt).format('DD/MM/YYYY')}` +
+          budgetAlert +
+          `\n\n_Ketik *budget* untuk melihat pembaruan alokasi kuota Anda._`;
+
+        return await sendWhatsAppMessage(from, reply);
       }
 
       // 2g-3. TAGIHAN RUTIN & SUBSCRIPTION
@@ -1085,6 +1270,7 @@ router.post('/webhook', async (req, res) => {
       `• \`makan 25rb di warteg\`\n` +
       `• \`makan 25rb, es teh 5rb, parkir 2rb\` (catat banyak sekaligus)\n` +
       `• \`rokok surya 35rb di warung\`\n` +
+      `• \`galon ubah kategori ke makanan dan minuman\` (edit transaksi lama)\n` +
       `• \`pindah 800rb ke seabank\` (alokasi saldo simpanan)\n` +
       `• \`pindah dana\` (panduan pemindahan saldo)\n` +
       `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
