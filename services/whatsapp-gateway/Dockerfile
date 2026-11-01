@@ -2,12 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache \
-    git \
-    python3 \
-    make \
-    g++ \
-    tzdata
+RUN apk add --no-cache tzdata
 
 COPY package*.json ./
 

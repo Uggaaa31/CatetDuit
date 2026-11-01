@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl git tzdata
+RUN apk add --no-cache openssl tzdata
 
 COPY package*.json ./
 COPY prisma ./prisma/
