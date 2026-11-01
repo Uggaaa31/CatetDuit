@@ -873,6 +873,29 @@ router.post('/webhook', async (req, res) => {
           });
         }
 
+        // Fallback 3: Jika pencarian teks lengkap belum ketemu, pecah kata kunci (misal: "air minum galon rs" -> cari "galon", "minum", dll)
+        if (matchingTxs.length === 0 && filter.keyword) {
+          const words = filter.keyword.split(/\s+/).filter((w) => w.length >= 3);
+          const sortedWords = [...words].sort((a, b) => b.length - a.length);
+          for (const word of sortedWords) {
+            const fallbackTxs = await prisma.transaction.findMany({
+              where: {
+                userNumber,
+                OR: [
+                  { description: { contains: word, mode: 'insensitive' } },
+                  { merchantName: { contains: word, mode: 'insensitive' } },
+                ],
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+            });
+            if (fallbackTxs.length > 0) {
+              matchingTxs = fallbackTxs;
+              break;
+            }
+          }
+        }
+
         if (matchingTxs.length === 0) {
           return await sendWhatsAppMessage(
             from,
