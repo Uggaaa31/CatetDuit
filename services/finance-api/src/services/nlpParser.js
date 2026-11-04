@@ -15,7 +15,7 @@ const CATEGORY_KEYWORDS = {
     'tahu', 'tempe', 'telur', 'telor', 'martabak', 'terang bulan', 'seblak', 'cilok', 'cireng', 'siomay', 'batagor',
     'pempek', 'bubur', 'bubur ayam', 'lontong', 'ketoprak', 'gado-gado', 'karedok', 'burger', 'pizza', 'kebab',
     'dimsum', 'hotdog', 'sandwich', 'pasta', 'spaghetti', 'steak', 'roti', 'donat', 'kue', 'croissant',
-    'mcd', 'kfc', 'hokben', 'dcost', 'solaria', 'richeese', 'aw', 'burger king', 'marugame',
+    'mcd', 'kfc', 'hokben', 'dcost', 'solaria', 'richeese', 'burger king', 'marugame',
     // Minuman
     'es teh', 'teh manis', 'teh botol', 'teh pucuk', 'es jeruk', 'jeruk peras', 'jus', 'juice', 'jus buah',
     'alpukat', 'mangga', 'pop ice', 'boba', 'chatime', 'haus', 'xiboba', 'teh', 'es kelapa', 'kelapa muda',
@@ -49,7 +49,7 @@ const CATEGORY_KEYWORDS = {
   ],
   'Bensin & Transportasi': [
     // BBM & SPBU
-    'bensin', 'pertalite', 'pertamax', 'turbo', 'solar', 'dexlite', 'spbu', 'pom bensin', 'pertamina', 'shell', 'bp', 'vivo',
+    'bensin', 'pertalite', 'pertamax', 'turbo', 'solar', 'dexlite', 'spbu', 'pom bensin', 'pertamina', 'shell', 'vivo',
     // Ojol & Angkutan
     'ojol', 'gojek', 'goride', 'gocar', 'grab', 'grabride', 'grabcar', 'maxim', 'indrive', 'taksi', 'bluebird',
     'krl', 'commuter line', 'mrt', 'lrt', 'busway', 'transjakarta', 'angkot', 'mikrolet', 'bis', 'bus', 'travel',
@@ -62,7 +62,7 @@ const CATEGORY_KEYWORDS = {
   ],
   'Kuota & Internet': [
     'kuota', 'paket data', 'paket internet', 'internet hp', 'pulsa', 'isi pulsa', 'beli pulsa',
-    'telkomsel', 'by.u', 'byu', 'indosat', 'im3', 'xl', 'axis', 'tri', '3', 'smartfren', 'liveon'
+    'telkomsel', 'by.u', 'byu', 'indosat', 'im3', 'xl', 'axis', 'tri', 'smartfren', 'liveon'
   ],
   'Listrik, Air & Wifi': [
     // Listrik & Air
@@ -130,6 +130,12 @@ function parseNominal(str) {
   if (rbMatch) {
     const val = parseFloat(rbMatch[1].replace(',', '.'));
     return Math.round(val * 1000);
+  }
+
+  // Pola desimal gaya Indonesia: "50.000,50" / "1.500,75"
+  const decimalMatch = clean.match(/^([0-9]{1,3}(?:\.[0-9]{3})+),([0-9]{1,2})$/);
+  if (decimalMatch) {
+    return Math.trunc(parseFloat(`${decimalMatch[1].replace(/\./g, '')}.${decimalMatch[2]}`));
   }
 
   // Pola angka langsung: "50000" atau "50.000" atau "50,000"
@@ -252,9 +258,11 @@ function parseFundTransfer(rawText) {
   else if (lower.includes('dari bsi')) fromBank = 'BSI';
 
   // Tentukan target transfer
-  let toTarget = 'Bank Jago';
-  let category = 'Belanja Bulanan';
-  let transferType = 'bank_to_bank';
+  // Default TIDAK lagi 'Bank Jago': transfer yang tidak menyebut bank/kantong
+  // diperlakukan sebagai transfer ke orang dan tetap dicatat sebagai pengeluaran.
+  let toTarget = null;
+  let category = null;
+  let transferType = 'person_transfer';
 
   if (lower.includes('seabank') || lower.includes('sea bank')) {
     toTarget = 'SeaBank';
@@ -310,7 +318,14 @@ function parseFundTransfer(rawText) {
     transferType = 'category_pocket';
   } else if (lower.includes('jago') || lower.includes('bank jago')) {
     toTarget = 'Bank Jago';
+    category = 'Belanja Bulanan';
     transferType = 'bank_to_bank';
+  }
+
+  if (transferType === 'person_transfer') {
+    // Ambil nama penerima dari teks, contoh: "transfer 150rb ke Budi"
+    const nameMatch = text.match(/(?:ke|untuk|kepada)\s+([A-Za-z][A-Za-z.\s]{1,30})$/i);
+    toTarget = nameMatch ? nameMatch[1].trim() : null;
   }
 
   return {
@@ -332,6 +347,18 @@ function parseFundTransfer(rawText) {
  * - "geser 50rb dari jatah rokok ke uang makan"
  * - "pindah 20rb ke makanan dari bulanan"
  */
+// Nama bank / e-wallet. Kalau muncul di salah satu sisi "pindah ... dari ...",
+// pesan itu transfer antar rekening, bukan pergeseran anggaran antar kantong.
+const BANK_WORDS = [
+  'bsi', 'bank jago', 'jago', 'seabank', 'sea bank', 'bca', 'mandiri', 'bni', 'bri',
+  'blu', 'gopay', 'ovo', 'shopeepay', 'jenius', 'muamalat', 'dana e-wallet',
+];
+
+function looksLikeBank(value) {
+  const text = String(value || '').toLowerCase();
+  return BANK_WORDS.some((bank) => text.includes(bank));
+}
+
 function parsePocketShift(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
   const lower = rawText.trim().toLowerCase();
@@ -341,6 +368,13 @@ function parsePocketShift(rawText) {
   }
 
   if (!lower.includes('dari') || (!lower.includes('ke') && !lower.includes('untuk'))) {
+    return null;
+  }
+
+  // "pindah 800rb ke seabank dari BSI" bukan pergeseran kantong -> biarkan
+  // parseFundTransfer yang menangani.
+  const sides = lower.split(/\bdari\b|\bke\b|\buntuk\b/).map((s) => s.trim());
+  if (sides.some((s) => looksLikeBank(s))) {
     return null;
   }
 
@@ -517,23 +551,6 @@ function extractTransactionItems(text) {
   let workingText = text.trim();
   let globalMerchant = null;
 
-  // Cek prefix merchant: 'di indomaret: sabun 20rb, odol 15rb'
-  const prefixMerchantMatch = workingText.match(/^(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})\s*[:|-]\s*(.+)$/i);
-  if (prefixMerchantMatch) {
-    globalMerchant = prefixMerchantMatch[1].trim();
-    workingText = prefixMerchantMatch[2].trim();
-  }
-
-  // Cek suffix merchant: 'sabun 20rb, odol 15rb di indomaret'
-  const suffixMerchantMatch = workingText.match(/(.+?)\s+(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})$/i);
-  if (suffixMerchantMatch) {
-    const candidateSuffix = suffixMerchantMatch[2].trim();
-    if (!parseNominal(candidateSuffix)) {
-      globalMerchant = candidateSuffix;
-      workingText = suffixMerchantMatch[1].trim();
-    }
-  }
-
   // 1. Lindungi tanggal, jam, dan kuantitas agar angkanya TIDAK dianggap sebagai uang/nominal
   const protectedTokens = [];
   function protect(val) {
@@ -563,6 +580,29 @@ function extractTransactionItems(text) {
 
   // Kuantitas: '2 porsi', '3 bungkus', '10 pcs'
   workingText = workingText.replace(/([0-9]+)\s*(porsi|bungkus|buah|botol|kotak|gelas|butir|lembar|biji|pcs|pack|sachet|kaleng|piring)/gi, (m) => protect(m));
+
+  // 2. Deteksi merchant DILAKUKAN SETELAH tanggal/jam/kuantitas dilindungi,
+  //    supaya nominal tidak ikut tertelan menjadi nama merchant.
+  // Cek prefix merchant: 'di indomaret: sabun 20rb, odol 15rb'
+  const prefixMerchantMatch = workingText.match(/^(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})\s*[:|-]\s*(.+)$/i);
+  if (prefixMerchantMatch) {
+    globalMerchant = prefixMerchantMatch[1].trim();
+    workingText = prefixMerchantMatch[2].trim();
+  }
+
+  // Cek suffix merchant: 'sabun 20rb, odol 15rb di indomaret'
+  const suffixMerchantMatch = workingText.match(/(.+?)\s+(?:di|ke)\s+([A-Za-z0-9\s.\-]{2,30})$/i);
+  if (suffixMerchantMatch) {
+    const candidateSuffix = suffixMerchantMatch[2].trim();
+    // Tolak kandidat yang masih mengandung angka atau token yang dilindungi.
+    // Tanpa ini, "jajan di kantin 15rb kemarin" membuat "kantin 15rb <tanggal>"
+    // dianggap nama merchant dan nominal transaksinya hilang.
+    const looksLikeAmount = /[0-9]/.test(candidateSuffix) || candidateSuffix.includes('__TOKEN_');
+    if (!looksLikeAmount && !parseNominal(candidateSuffix)) {
+      globalMerchant = candidateSuffix;
+      workingText = suffixMerchantMatch[1].trim();
+    }
+  }
 
   // Regex nominal yang akurat:
   // 1. Ada simbol rp / idr
@@ -638,13 +678,6 @@ function extractTransactionItems(text) {
     let description = itemText.replace(match[0], '').trim();
     description = description.replace(/^[-–—:]\s*/, '').replace(/\s*[-–—:]$/, '').trim();
 
-    let merchantName = globalMerchant;
-    const diTokoMatch = description.match(/(?:\s+(?:di|ke|@)\s+)([A-Za-z0-9\s.\-]{2,40})$/i);
-    if (diTokoMatch) {
-      merchantName = diTokoMatch[1].trim();
-      description = description.substring(0, diTokoMatch.index).trim();
-    }
-
     // Kembalikan token asli (misal: 'pada tanggal 21')
     description = restoreTokens(description).trim();
 
@@ -664,6 +697,13 @@ function extractTransactionItems(text) {
     description = description.replace(/\b(?:hari\s+)?(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '');
     // Bersihkan spasi berlebih dan tanda baca di ujung
     description = description.replace(/\s{2,}/g, ' ').replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim();
+
+    let merchantName = globalMerchant;
+    const diTokoMatch = description.match(/(?:\s+(?:di|ke|@)\s+)([A-Za-z0-9\s.\-]{2,40})$/i);
+    if (diTokoMatch) {
+      merchantName = diTokoMatch[1].trim();
+      description = description.substring(0, diTokoMatch.index).trim();
+    }
 
     if (!description) {
       description = isIncome ? 'Pemasukan' : 'Pengeluaran';

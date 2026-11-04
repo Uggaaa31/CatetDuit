@@ -21,6 +21,90 @@ if GEMINI_API_KEY:
 else:
     logger.warning("GEMINI_API_KEY belum disetel pada file .env.")
 
+
+# ---------------------------------------------------------------------------
+# Validasi kategori. AI tidak selalu mengembalikan nama kategori yang persis sama
+# ("Makan & Minum", "Lain-lain", dst). Semua hasil dinormalisasi ke 10 kantong
+# resmi supaya pencocokan anggaran di finance-api tidak gagal diam-diam.
+# ---------------------------------------------------------------------------
+VALID_CATEGORIES = [
+    "Makanan & Minuman",
+    "Rokok & Vape",
+    "Bensin & Transportasi",
+    "Kuota & Internet",
+    "Listrik, Air & Wifi",
+    "Belanja Bulanan",
+    "Nongkrong & Hiburan",
+    "Kirim Keluarga",
+    "Dana Darurat",
+    "Tabungan",
+]
+
+CATEGORY_ALIASES = {
+    "makan": "Makanan & Minuman",
+    "minum": "Makanan & Minuman",
+    "food": "Makanan & Minuman",
+    "kuliner": "Makanan & Minuman",
+    "rokok": "Rokok & Vape",
+    "vape": "Rokok & Vape",
+    "tembakau": "Rokok & Vape",
+    "bensin": "Bensin & Transportasi",
+    "transport": "Bensin & Transportasi",
+    "kuota": "Kuota & Internet",
+    "internet": "Kuota & Internet",
+    "pulsa": "Kuota & Internet",
+    "listrik": "Listrik, Air & Wifi",
+    "wifi": "Listrik, Air & Wifi",
+    "tagihan": "Listrik, Air & Wifi",
+    "utilitas": "Listrik, Air & Wifi",
+    "belanja": "Belanja Bulanan",
+    "sembako": "Belanja Bulanan",
+    "rumah tangga": "Belanja Bulanan",
+    "nongkrong": "Nongkrong & Hiburan",
+    "hiburan": "Nongkrong & Hiburan",
+    "keluarga": "Kirim Keluarga",
+    "ortu": "Kirim Keluarga",
+    "darurat": "Dana Darurat",
+    "kesehatan": "Dana Darurat",
+    "tabungan": "Tabungan",
+    "investasi": "Tabungan",
+}
+
+
+def normalize_category(raw, fallback: str = "Belanja Bulanan") -> str:
+    """Petakan nama kategori apa pun (termasuk 'Lain-lain') ke 10 kategori resmi."""
+    if not raw:
+        return fallback
+    text = str(raw).strip()
+    for cat in VALID_CATEGORIES:
+        if text.lower() == cat.lower():
+            return cat
+
+    norm = re.sub(r"\s+", " ", text.lower().replace("&", "dan").replace("/", " ")).strip()
+    if norm in ("lain-lain", "lain lain", "lainnya", "other", "misc", "uncategorized"):
+        return fallback
+
+    for cat in VALID_CATEGORIES:
+        cat_norm = re.sub(r"\s+", " ", cat.lower().replace("&", "dan")).strip()
+        if cat_norm == norm or cat_norm in norm or norm in cat_norm:
+            return cat
+
+    for key, cat in CATEGORY_ALIASES.items():
+        if key in norm:
+            return cat
+
+    return fallback
+
+
+def normalize_type(raw, default: str = "expense") -> str:
+    """Hanya izinkan 'income' atau 'expense'."""
+    text = str(raw or "").strip().lower()
+    if text in ("income", "masuk", "pemasukan", "kredit", "credit", "in", "uang masuk"):
+        return "income"
+    if text in ("expense", "keluar", "pengeluaran", "debet", "debit", "out"):
+        return "expense"
+    return default
+
 class ReceiptItem(BaseModel):
     name: str
     price: float
@@ -136,16 +220,21 @@ def extract_receipt(payload: OCRRequest):
 
     try:
         result = extract_with_gemini(payload.imageFilePath)
+
+        receipt_type = result.get("receiptType", "struk_belanja")
+        if receipt_type not in ("struk_belanja", "m_banking", "qris"):
+            receipt_type = "struk_belanja"
+
         return OCRResponse(
-            receiptType=result.get("receiptType", "struk_belanja"),
-            transactionType=result.get("transactionType", "expense"),
+            receiptType=receipt_type,
+            transactionType=normalize_type(result.get("transactionType"), "expense"),
             bankName=result.get("bankName"),
             merchantName=result.get("merchantName") or result.get("recipientName") or "Toko / Penerima",
             recipientName=result.get("recipientName"),
             notes=result.get("notes"),
             totalAmount=float(result.get("totalAmount", 0)),
             date=result.get("date"),
-            category=result.get("category", "Belanja Bulanan"),
+            category=normalize_category(result.get("category")),
             items=[ReceiptItem(**i) for i in result.get("items", [])],
             engine="gemini"
         )
@@ -327,10 +416,10 @@ def parse_chat(payload: ChatParseRequest):
                 if amt > 0:
                     transactions.append(
                         AITransactionItem(
-                            type=t.get("type", "expense"),
+                            type=normalize_type(t.get("type"), "expense"),
                             amount=amt,
-                            description=t.get("description", "Pengeluaran"),
-                            category=t.get("category", "Makanan & Minuman"),
+                            description=t.get("description", "Pengeluaran") or "Pengeluaran",
+                            category=normalize_category(t.get("category"), "Makanan & Minuman"),
                             merchantName=t.get("merchantName"),
                         )
                     )
@@ -346,7 +435,9 @@ def parse_chat(payload: ChatParseRequest):
                 amount=float(transfer_data.get("amount", 0)),
                 fromBank=transfer_data.get("fromBank"),
                 toTarget=transfer_data.get("toTarget"),
-                category=transfer_data.get("category"),
+                category=normalize_category(transfer_data.get("category"))
+                if transfer_data.get("category")
+                else None,
                 notes=transfer_data.get("notes"),
             )
 
@@ -355,8 +446,12 @@ def parse_chat(payload: ChatParseRequest):
         if pocket_shift_data and pocket_shift_data.get("isShift"):
             pocket_shift_obj = AIPocketShift(
                 isShift=True,
-                fromPocket=pocket_shift_data.get("fromPocket"),
-                toPocket=pocket_shift_data.get("toPocket"),
+                fromPocket=normalize_category(pocket_shift_data.get("fromPocket"), "")
+                if pocket_shift_data.get("fromPocket")
+                else None,
+                toPocket=normalize_category(pocket_shift_data.get("toPocket"), "")
+                if pocket_shift_data.get("toPocket")
+                else None,
                 amount=float(pocket_shift_data.get("amount", 0)),
             )
 

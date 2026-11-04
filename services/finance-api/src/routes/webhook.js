@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../db');
-const { parseMessage, isConversationalText } = require('../services/nlpParser');
+const { parseMessage, isConversationalText, detectCategory } = require('../services/nlpParser');
 const { sendWhatsAppMessage, sendWhatsAppDocument } = require('../services/waClient');
 const { extractReceiptData, parseChatWithAI } = require('../services/ocrClient');
 const { generateFinancialExcel } = require('../services/excelService');
@@ -35,6 +35,7 @@ const {
   listDebts,
   generateDebtReport,
 } = require('../services/debtService');
+const crypto = require('crypto');
 const dayjs = require('dayjs');
 
 // Map untuk konfirmasi 2 langkah perintah berbahaya (TTL 60 detik)
@@ -166,24 +167,12 @@ function getPeriodRange(period) {
   };
 }
 
-const { getCanonicalUserNumber } = require('../config');
+const { getCanonicalUserNumber, isSenderAllowed } = require('../config');
 
+// Aturan izin pengirim dipusatkan di config.js (isSenderAllowed) supaya
+// konsisten dan bisa diuji langsung.
 function isAllowedSender(from) {
-  if (!from) return false;
-  // Tolak SEMUA pesan grup WhatsApp
-  if (from.endsWith('@g.us') || from.includes('@g.us')) return false;
-
-  const raw = process.env.ALLOWED_NUMBERS || '';
-  const allowed = raw
-    .split(',')
-    .map((n) => n.trim().replace(/[^0-9]/g, ''))
-    .filter(Boolean);
-
-  if (allowed.length === 0) return false;
-  if (allowed.includes('*')) return true;
-
-  const clean = from.split('@')[0].replace(/[^0-9]/g, '');
-  return allowed.includes(clean);
+  return isSenderAllowed(from);
 }
 
 async function executePocketShiftOperation(userNumber, from, shiftData) {
@@ -267,6 +256,39 @@ async function executeTransferOperation(userNumber, from, transferData) {
     return await sendWhatsAppMessage(from, reply);
   }
 
+  // Kasus D: Transfer ke orang/toko yang tidak menyebut bank maupun kantong.
+  // Tetap dicatat sebagai pengeluaran supaya uang keluar tidak hilang dari pembukuan.
+  if (transferType === 'person_transfer') {
+    const person = toTarget || 'Penerima';
+    const category = detectCategory(`transfer ke ${person}`, 'expense', numAmount);
+
+    const tx = await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: 'expense',
+        source: 'transfer_person',
+        amount: numAmount,
+        description: `Transfer ke ${person}`,
+        category,
+      },
+    });
+
+    const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
+    const budgetNote = budgetStatus.hasBudget
+      ? `\n📊 *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)}`
+      : '';
+
+    const reply =
+      `✅ *Transfer Berhasil Dicatat!*\n\n` +
+      `👤 *Tujuan:* ${person}\n` +
+      `💰 *Nominal:* ${formatRupiah(tx.amount)}\n` +
+      `🏷️ *Kategori:* ${tx.category}` +
+      budgetNote +
+      `\n\n_Kategori diisi otomatis. Kalau keliru, ketik *ubah kategori [nama]*. Ketik *batal* untuk membatalkan._`;
+
+    return await sendWhatsAppMessage(from, reply);
+  }
+
   // Kasus C: Alokasi ke Kantong Tertentu (Ortu, Dana Darurat, Tabungan, Makan, dll)
   const targetCategory = category || 'Belanja Bulanan';
   await prisma.transaction.create({
@@ -308,7 +330,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       type: type || 'expense',
       amount: parseFloat(amount) || 0,
       description: description || 'Pengeluaran',
-      category: category || 'Makanan & Minuman',
+      category: matchCategory(category) || category || 'Makanan & Minuman',
       merchantName: merchantName || null,
       source: sourceLabel || 'manual',
     };
@@ -364,6 +386,8 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
   let totalExpense = 0;
   let totalIncome = 0;
   const createdTxs = [];
+  // Satu pesan = satu batchId, dipakai fitur "batal" agar pembatalan tepat sasaran.
+  const batchId = crypto.randomUUID();
 
   for (const item of items) {
     const txData = {
@@ -371,9 +395,10 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       type: item.type || 'expense',
       amount: parseFloat(item.amount) || 0,
       description: item.description || 'Pengeluaran',
-      category: item.category || 'Makanan & Minuman',
+      category: matchCategory(item.category) || item.category || 'Makanan & Minuman',
       merchantName: item.merchantName || null,
       source: sourceLabel || 'manual_multi',
+      batchId,
     };
     if (item.customDate) {
       txData.createdAt = item.customDate;
@@ -489,7 +514,7 @@ router.post('/webhook', async (req, res) => {
             : `Transfer ${bankName ? `${bankName} ke ` : ''}${recipientName || merchantName || 'Penerima'}`;
         } else if (items && items.length > 0) {
           description = items
-            .map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name} (Rp ${formatRupiah(i.price)})`)
+            .map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name} (${formatRupiah(i.price)})`)
             .join(', ');
           itemListText = '\n*📦 Rincian Barang:*';
           items.forEach((item, idx) => {
@@ -506,7 +531,7 @@ router.post('/webhook', async (req, res) => {
             source: receiptType === 'm_banking' ? 'ocr_mbanking' : 'ocr',
             amount: parseFloat(totalAmount),
             description,
-            category: category || (transactionType === 'income' ? 'Gaji & Pemasukan' : 'Belanja Bulanan'),
+            category: matchCategory(category) || category || (transactionType === 'income' ? 'Gaji & Pemasukan' : 'Belanja Bulanan'),
             merchantName: merchantName || recipientName || null,
             receiptImageUrl: imageFilePath,
           },
@@ -1131,17 +1156,15 @@ router.post('/webhook', async (req, res) => {
           return await sendWhatsAppMessage(from, 'ℹ️ Tidak ada transaksi untuk dibatalkan.');
         }
 
-        // Cek apakah ada transaksi berdekatan (dalam selang 4 detik, batch multi-item)
-        const recentTxs = await prisma.transaction.findMany({
-          where: {
-            userNumber,
-            createdAt: {
-              gte: new Date(lastTx.createdAt.getTime() - 4000),
-              lte: new Date(lastTx.createdAt.getTime() + 1000),
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+        // Batalkan berdasarkan batchId dari satu pesan multi-item.
+        // Sebelumnya memakai heuristik jendela 4 detik yang bisa ikut menghapus
+        // transaksi lain yang kebetulan dicatat berdekatan.
+        const recentTxs = lastTx.batchId
+          ? await prisma.transaction.findMany({
+              where: { userNumber, batchId: lastTx.batchId },
+              orderBy: { createdAt: 'desc' },
+            })
+          : [];
 
         if (recentTxs.length > 1) {
           await prisma.transaction.deleteMany({

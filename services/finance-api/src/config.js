@@ -88,6 +88,36 @@ function getCanonicalUserNumber(from) {
 }
 
 /**
+ * Apakah pengirim (JID WhatsApp) boleh dilayani?
+ *
+ * - Grup (@g.us) selalu ditolak.
+ * - ALLOWED_NUMBERS="*" berarti semua nomor pribadi diizinkan.
+ * - Format 08xxx dan 62xxx dianggap nomor yang sama.
+ * - LID (@lid) dicocokkan ke LID_ALIASES karena bukan nomor HP.
+ *
+ * rawAllowed / lidAliases bisa dioper eksplisit (dipakai unit test).
+ */
+function isSenderAllowed(from, rawAllowed, lidAliases) {
+  if (!from) return false;
+  const jid = String(from);
+  if (jid.includes('@g.us')) return false;
+
+  const raw = String(rawAllowed == null ? process.env.ALLOWED_NUMBERS || '' : rawAllowed);
+  // Wildcard harus dicek dari string mentah: parseNumberList() membuang semua
+  // karakter non-angka sehingga '*' akan hilang dan bot malah menolak semuanya.
+  if (raw.split(',').some((item) => item.trim() === '*')) return true;
+
+  const allowed = parseNumberList(raw).map(normalizePhoneNumber);
+  if (allowed.length === 0) return false;
+
+  const senderDigits = digitsOnly(jid.split('@')[0]);
+  if (allowed.includes(normalizePhoneNumber(senderDigits))) return true;
+
+  const aliases = lidAliases == null ? LID_ALIASES : lidAliases;
+  return aliases.includes(senderDigits);
+}
+
+/**
  * Samarkan nomor untuk log supaya tidak menulis nomor penuh ke stdout.
  */
 function maskNumber(value) {
@@ -113,6 +143,7 @@ module.exports = {
   isRealPhoneNumber,
   getPrimaryUserNumber,
   getCanonicalUserNumber,
+  isSenderAllowed,
   maskNumber,
   logIdentityConfig,
 };

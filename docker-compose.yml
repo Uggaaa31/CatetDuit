@@ -27,13 +27,17 @@ services:
       - PORT=3001
       - FINANCE_API_URL=${FINANCE_API_URL:-http://finance-api:3000}
       - ALLOWED_NUMBERS=${ALLOWED_NUMBERS}
+      # ID @lid yang diizinkan mengirim pesan (dipisah koma)
+      - LID_ALIASES=${LID_ALIASES:-}
       - MEDIA_DIR=/app/media
       - TZ=${TZ:-Asia/Makassar}
     volumes:
       - whatsapp_session:/app/auth_info
       - shared_media:/app/media
     ports:
-      - "3001:3001"
+      # Default hanya bisa diakses dari komputer host (aman).
+      # Ubah BIND_HOST=0.0.0.0 di .env kalau perlu diakses dari perangkat lain.
+      - "${BIND_HOST:-127.0.0.1}:3001:3001"
     networks:
       - finance_net
 
@@ -61,7 +65,7 @@ services:
     volumes:
       - shared_media:/app/media
     ports:
-      - "3000:3000"
+      - "${BIND_HOST:-127.0.0.1}:3000:3000"
     networks:
       - finance_net
 
@@ -78,7 +82,7 @@ services:
     volumes:
       - shared_media:/app/media
     ports:
-      - "8000:8000"
+      - "${BIND_HOST:-127.0.0.1}:8000:8000"
     networks:
       - finance_net
 

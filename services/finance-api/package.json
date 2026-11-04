@@ -4,10 +4,11 @@
   "description": "Finance API & WhatsApp Bot Orchestrator",
   "main": "src/index.js",
   "scripts": {
-    "start": "npx prisma migrate deploy && node src/index.js",
+    "start": "npx prisma db push && node src/index.js",
     "dev": "node src/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate deploy"
+    "prisma:migrate": "prisma migrate deploy",
+    "test": "node test/parser.test.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

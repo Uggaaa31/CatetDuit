@@ -18,10 +18,14 @@ model Transaction {
   receiptImageUrl  String?
   notificationRaw  String?  @db.Text
   userNumber       String
+  // Penanda batch untuk pencatatan banyak item sekaligus, dipakai fitur "batal"
+  // agar pembatalan hanya menghapus transaksi dari satu pesan yang sama.
+  batchId          String?
   createdAt        DateTime @default(now())
 
   @@index([userNumber])
   @@index([createdAt])
+  @@index([batchId])
 }
 
 model Budget {

@@ -51,7 +51,9 @@ function getPayCycleRange(targetDate = dayjs()) {
 
   const todayEnd = d.endOf('day');
   const daysRemaining = Math.max(1, Math.ceil(end.diff(todayEnd, 'day', true)) + 1);
-  const totalDays = Math.round(end.diff(start, 'day', true)) + 1;
+  // Hitung selisih berdasarkan awal hari, bukan jam akhir hari, supaya jumlah hari
+  // kalender siklus 21–20 tidak kelebihan 1 hari.
+  const totalDays = end.startOf('day').diff(start.startOf('day'), 'day') + 1;
   const daysPassed = Math.max(1, totalDays - daysRemaining + 1);
   const nextPayday = day >= 21 ? d.add(1, 'month').date(21) : d.date(21);
 

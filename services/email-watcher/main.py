@@ -197,6 +197,12 @@ def process_email_message(msg_data, client, msg_id):
     amount = extract_amount(body + " " + subject)
     if amount <= 0:
         logger.warning("Tidak dapat mendeteksi nominal transaksi pada email ini.")
+        # Tandai sudah dibaca supaya email yang sama tidak di-parse berulang
+        # setiap siklus polling (sebelumnya membanjiri log).
+        try:
+            client.add_flags(msg_id, [r"\Seen"])
+        except Exception as flag_err:
+            logger.warning(f"Gagal menandai email {msg_id} sebagai dibaca: {flag_err}")
         return
 
     merchant = extract_merchant(body, subject)

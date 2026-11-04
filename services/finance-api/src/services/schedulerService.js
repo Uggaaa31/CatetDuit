@@ -390,6 +390,7 @@ function startRecurringScheduler() {
   async function checkAndRun() {
     const now = dayjs();
     const date = now.date();
+    const daysInMonth = now.daysInMonth();
     const hour = now.hour();
     const minute = now.minute();
 
@@ -432,7 +433,7 @@ function startRecurringScheduler() {
                 where: {
                   userNumber,
                   isActive: true,
-                  dueDay: { in: [date, date + 1] },
+                  dueDay: { in: [date, date >= daysInMonth ? 1 : date + 1] },
                 },
               });
 
@@ -440,7 +441,8 @@ function startRecurringScheduler() {
                 const billLines = dueBills
                   .map((b) => {
                     const timing = b.dueDay === date ? 'Hari Ini' : 'Besok';
-                    return `• *${b.name}*: ${formatRupiah(b.amount)} (Jatuh tempo *${timing}*)`;
+                    const nominal = b.amount > 0 ? formatRupiah(b.amount) : 'nominal belum diisi';
+                    return `• *${b.name}*: ${nominal} (Jatuh tempo *${timing}*)`;
                   })
                   .join('\n');
 

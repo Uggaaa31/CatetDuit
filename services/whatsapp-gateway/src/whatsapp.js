@@ -40,11 +40,25 @@ const FINANCE_API_URL = process.env.FINANCE_API_URL || 'http://finance-api:3000'
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
+// Normalisasi nomor: 08xxx -> 62xxx supaya format .env tidak harus seragam.
+function normalizeNumber(value) {
+  const clean = String(value || '').replace(/[^0-9]/g, '');
+  return clean.startsWith('08') ? '62' + clean.slice(1) : clean;
+}
+
 function getAllowedNumbers() {
-  const raw = process.env.ALLOWED_NUMBERS || '';
+  const raw = String(process.env.ALLOWED_NUMBERS || '');
   return raw
     .split(',')
-    .map((n) => n.trim().replace(/[^0-9]/g, ''))
+    .map((n) => normalizeNumber(n))
+    .filter(Boolean);
+}
+
+function getLidAliases() {
+  const raw = String(process.env.LID_ALIASES || '');
+  return raw
+    .split(',')
+    .map((n) => n.replace(/[^0-9]/g, ''))
     .filter(Boolean);
 }
 
@@ -61,12 +75,18 @@ function isSenderAllowed(senderJid) {
     return false;
   }
 
+  const raw = String(process.env.ALLOWED_NUMBERS || '');
+  // Wildcard dicek dari string mentah (normalizeNumber membuang karakter '*').
+  if (raw.split(',').some((item) => item.trim() === '*')) return true;
+
   const allowed = getAllowedNumbers();
   if (allowed.length === 0) return false;
-  if (allowed.includes('*')) return true;
 
   const cleanSender = senderJid.split('@')[0].replace(/[^0-9]/g, '');
-  return allowed.includes(cleanSender);
+  if (allowed.includes(normalizeNumber(cleanSender))) return true;
+
+  // Pengirim berupa LID tidak bisa dicocokkan ke nomor HP: izinkan kalau terdaftar.
+  return getLidAliases().includes(cleanSender);
 }
 
 async function connectToWhatsApp() {

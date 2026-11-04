@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log*
+media
+*.xlsx
+*.jpg
+*.jpeg
+*.png
+.env
+.env.*
+!.env.example
