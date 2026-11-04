@@ -547,6 +547,10 @@ function extractCustomDate(text) {
  * Ekstrak item-item transaksi dari string teks
  * Mendukung single item maupun multi-item (dipisahkan baris baru, koma non-desimal, atau kata hubung)
  */
+// Pola nominal dipakai dua kali: untuk mengekstrak nilai dan untuk menghitung
+// berapa nominal yang disebut (menentukan perlu AI atau tidak).
+const NOMINAL_REGEX_SOURCE = String.raw`(?:(?:rp\.?|idr)\s*[0-9]+(?:[.,][0-9]+)?(?:\s*(?:jt|juta|rb|ribu|k))?|[0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)|[0-9]{1,3}(?:\.[0-9]{3})+|\b[1-9][0-9]{2,}\b)`;
+
 function extractTransactionItems(text) {
   let workingText = text.trim();
   let globalMerchant = null;
@@ -609,7 +613,7 @@ function extractTransactionItems(text) {
   // 2. Ada suffix satuan: jt, juta, rb, ribu, k
   // 3. Format ribuan bertitik: 50.000, 1.500.000
   // 4. Angka polos minimal 3 digit (>= 100): 500, 2000, 25000 (bukan angka 1 digit/2 digit)
-  const nominalRegex = /(?:(?:rp\.?|idr)\s*[0-9]+(?:[.,][0-9]+)?(?:\s*(?:jt|juta|rb|ribu|k))?|[0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)|[0-9]{1,3}(?:\.[0-9]{3})+|\b[1-9][0-9]{2,}\b)/gi;
+  const nominalRegex = new RegExp(NOMINAL_REGEX_SOURCE, 'gi');
   const allNominalMatches = workingText.match(nominalRegex) || [];
 
   if (allNominalMatches.length === 0) {
@@ -738,6 +742,28 @@ function extractTransactionItems(text) {
   }
 
   return items;
+}
+
+/**
+ * Hitung berapa nominal uang yang disebut dalam satu pesan. Tanggal, jam, dan
+ * kuantitas disisihkan lebih dulu supaya tidak ikut terhitung.
+ *
+ * Dipakai webhook untuk memutuskan: hasil parser regex sudah lengkap (jalur cepat),
+ * atau masih ada nominal yang belum tertangkap (perlu AI).
+ */
+function countNominals(rawText) {
+  if (!rawText || typeof rawText !== 'string') return 0;
+  let text = rawText;
+
+  text = text.replace(/(?:pada\s+)?(?:tanggal|tgl)?\s*[0-9]{1,2}\s+(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|ags|agt|sep|sept|okt|nov|des)(?:\s+[0-9]{2,4})?/gi, ' ');
+  text = text.replace(/(?:pada\s+)?(?:tanggal|tgl)\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{1,2}(?:\s*[-/]\s*[0-9]{2,4})?)?/gi, ' ');
+  text = text.replace(/\b[0-9]{1,2}[\/\-][0-9]{1,2}(?:[\/\-][0-9]{2,4})?\b/g, ' ');
+  text = text.replace(/(?:jam|pukul)\s*[0-9]{1,2}(?:[:.][0-9]{2})?/gi, ' ');
+  text = text.replace(/([0-9]+)\s*(porsi|bungkus|buah|botol|kotak|gelas|butir|lembar|biji|pcs|pack|sachet|kaleng|piring)/gi, ' ');
+  text = text.replace(/\b[0-9]+\s*hari\s*(?:yang\s+)?lalu\b/gi, ' ');
+
+  const matches = text.match(new RegExp(NOMINAL_REGEX_SOURCE, 'gi')) || [];
+  return matches.length;
 }
 
 /**
@@ -988,6 +1014,38 @@ function parseMessage(rawText) {
     }
   }
 
+  // --- Aturan kategori pribadi & insight ---
+  const ruleText = text.replace(/\s+(?:ya|dong|deh|sih|oke|ok)$/i, '').trim();
+
+  if (/^(?:aturan|daftar aturan|lihat aturan|aturanku)$/i.test(ruleText)) {
+    return { isCommand: true, action: 'list_rules' };
+  }
+
+  const removeRuleMatch = ruleText.match(/^(?:hapus|buang)\s+aturan\s+([a-zA-Z0-9 ]{2,30})$/i);
+  if (removeRuleMatch) {
+    return { isCommand: true, action: 'remove_rule', keyword: removeRuleMatch[1].trim() };
+  }
+
+  const addRuleA = ruleText.match(
+    /^(?:kalau\s+)?(?:(?:aku|saya|gw|gue)\s+)?(?:bilang|ketik|tulis)\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:masuk|jadi|termasuk)\s+(?:ke\s+)?(?:kategori\s+|kantong\s+)?([a-zA-Z][a-zA-Z ,&]{2,30})$/i
+  );
+  const addRuleB = ruleText.match(
+    /^(?:atur|set|bikin)\s+aturan\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:masuk|jadi|ke)\s+([a-zA-Z][a-zA-Z ,&]{2,30})$/i
+  );
+  const addRuleMatch = addRuleA || addRuleB;
+  if (addRuleMatch) {
+    return {
+      isCommand: true,
+      action: 'add_rule',
+      keyword: addRuleMatch[1].trim(),
+      categoryInput: addRuleMatch[2].trim(),
+    };
+  }
+
+  if (/^(?:insight|insight mingguan|simulasi insight|tes insight)$/i.test(ruleText)) {
+    return { isCommand: true, action: 'trigger_weekly_insight' };
+  }
+
   if (lower === 'rekap' || lower.startsWith('rekap')) {
     let period = 'today';
     if (lower.includes('bulan') || lower.includes('monthly') || lower.includes('siklus')) period = 'month';
@@ -1053,6 +1111,7 @@ module.exports = {
   parseNominal,
   detectCategory,
   extractTransactionItems,
+  countNominals,
   CATEGORY_KEYWORDS,
   isConversationalText,
   parsePocketShift,

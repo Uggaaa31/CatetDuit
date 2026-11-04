@@ -69,3 +69,38 @@ model Debt {
   @@index([userNumber])
   @@index([isPaid])
 }
+
+// Riwayat percakapan singkat supaya AI punya konteks ("yang tadi berapa?").
+model ChatMessage {
+  id         String   @id @default(uuid())
+  userNumber String
+  role       String   // "user" | "assistant"
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([userNumber, createdAt])
+}
+
+// Aturan kategori pribadi: "kalau aku bilang ngopi masuk nongkrong".
+model UserRule {
+  id         String   @id @default(uuid())
+  userNumber String
+  keyword    String
+  category   String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userNumber, keyword])
+  @@index([userNumber])
+}
+
+// Pertanyaan bot yang belum dijawab user (mis. "Rp 15.000 atau Rp 150.000?").
+model PendingClarification {
+  id          String   @id @default(uuid())
+  userNumber  String   @unique
+  question    String   @db.Text
+  contextJson String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

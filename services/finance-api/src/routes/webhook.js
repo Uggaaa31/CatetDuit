@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../db');
-const { parseMessage, isConversationalText, detectCategory } = require('../services/nlpParser');
+const { parseMessage, isConversationalText, detectCategory, countNominals } = require('../services/nlpParser');
 const { sendWhatsAppMessage, sendWhatsAppDocument } = require('../services/waClient');
 const { extractReceiptData, parseChatWithAI } = require('../services/ocrClient');
 const { generateFinancialExcel } = require('../services/excelService');
@@ -21,6 +21,7 @@ const {
   executeBooster1,
   executeNightlyReminder,
   executeAllocationReminder22,
+  executeWeeklyInsight,
 } = require('../services/schedulerService');
 const {
   addBill,
@@ -37,6 +38,15 @@ const {
 } = require('../services/debtService');
 const crypto = require('crypto');
 const dayjs = require('dayjs');
+const {
+  saveMessage,
+  getRecentHistory,
+  setPending,
+  takePending,
+  hasPendingClarification,
+} = require('../services/chatMemory');
+const { buildFacts } = require('../services/financeFacts');
+const { addRule, listRules, removeRule, applyRules, formatRuleList } = require('../services/ruleService');
 
 // Map untuk konfirmasi 2 langkah perintah berbahaya (TTL 60 detik)
 const pendingRestarts = new Map();
@@ -322,6 +332,9 @@ async function executeTransferOperation(userNumber, from, transferData) {
 async function executeTransactionsOperation(userNumber, from, items, sourceLabel = 'manual', badgeText = '') {
   if (!items || items.length === 0) return;
 
+  // Aturan kategori pribadi menang atas tebakan otomatis parser maupun AI.
+  items = await applyRules(userNumber, items);
+
   if (items.length === 1) {
     const { type, amount, description, category, merchantName, customDate } = items[0];
 
@@ -350,6 +363,10 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
       `🏷️ *Kategori:* ${tx.category}\n` +
       `📦 *Barang/Catatan:* ${tx.description}\n`;
+
+    if (items[0].ruleKeyword) {
+      reply += `⚙️ *Aturan pribadi:* "${items[0].ruleKeyword}" → ${tx.category}\n`;
+    }
 
     if (customDate) {
       reply += `📅 *Tanggal Transaksi:* ${dayjs(tx.createdAt).format('DD/MM/YYYY')}\n`;
@@ -444,6 +461,11 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
     }
   }
 
+  const appliedRules = items
+    .map((item, idx) => (item.ruleKeyword ? `"${item.ruleKeyword}" → ${createdTxs[idx] ? createdTxs[idx].category : item.category}` : null))
+    .filter(Boolean);
+  const ruleBlock = appliedRules.length > 0 ? `\n⚙️ *Aturan pribadi dipakai:* ${appliedRules.join(', ')}\n` : '';
+
   const alertBlock = budgetAlerts.length > 0 ? `\n${budgetAlerts.join('\n')}\n` : '';
   const badgeBlock = badgeText ? `\n${badgeText}\n` : '';
 
@@ -452,11 +474,238 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
     itemListText +
     `═══════════════════════\n` +
     summaryText + '\n' +
+    ruleBlock +
     alertBlock +
     badgeBlock +
     `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._`;
 
   return await sendWhatsAppMessage(from, reply);
+}
+
+// ---------------------------------------------------------------------------
+// Gerbang pemakaian AI: kill switch (AI_ENABLED) + batas pemakaian per pengguna
+// ---------------------------------------------------------------------------
+const AI_ENABLED = String(process.env.AI_ENABLED || 'true').trim().toLowerCase() !== 'false';
+const AI_RATE_LIMIT_PER_HOUR = parseInt(process.env.AI_RATE_LIMIT_PER_HOUR || '30', 10);
+const aiUsage = new Map(); // userNumber -> [timestamp]
+const aiNoticeAt = new Map(); // userNumber -> timestamp notifikasi terakhir
+
+function aiGate(userNumber) {
+  if (!AI_ENABLED) return { allowed: false, reason: 'disabled' };
+  if (!(AI_RATE_LIMIT_PER_HOUR > 0)) return { allowed: true };
+
+  const now = Date.now();
+  const windowStart = now - 60 * 60 * 1000;
+  const hits = (aiUsage.get(userNumber) || []).filter((t) => t > windowStart);
+
+  if (hits.length >= AI_RATE_LIMIT_PER_HOUR) {
+    aiUsage.set(userNumber, hits);
+    return { allowed: false, reason: 'limited' };
+  }
+
+  hits.push(now);
+  aiUsage.set(userNumber, hits);
+  return { allowed: true };
+}
+
+/**
+ * Beri tahu pengguna maksimal sekali per 30 menit untuk masalah AI yang sama,
+ * supaya tidak jadi spam saat kuota habis atau server AI sedang down.
+ */
+async function notifyAiIssue(from, userNumber, text) {
+  const now = Date.now();
+  if (now - (aiNoticeAt.get(userNumber) || 0) < 30 * 60 * 1000) return;
+  aiNoticeAt.set(userNumber, now);
+  await sendWhatsAppMessage(from, text);
+}
+
+/**
+ * Kirim pesan ke AI lalu eksekusi hasilnya.
+ * true  = pesan sudah ditangani (hentikan rantai handler)
+ * false = lanjut ke parser regex / balasan default
+ */
+const AI_DUPLICATE_WINDOW_MS = parseInt(process.env.AI_DUPLICATE_WINDOW_MS || '180000', 10);
+
+/**
+ * Saring transaksi hasil AI yang sebenarnya sudah tercatat beberapa menit terakhir.
+ * Jaring pengaman kalau AI "lupa" bahwa transaksi itu sudah masuk pembukuan.
+ */
+async function filterDuplicateTransactions(userNumber, items) {
+  if (!Array.isArray(items) || items.length === 0) return items;
+
+  try {
+    const since = new Date(Date.now() - AI_DUPLICATE_WINDOW_MS);
+    const recent = await prisma.transaction.findMany({
+      where: { userNumber, createdAt: { gte: since } },
+    });
+    const seen = new Set(
+      recent.map((t) => `${Math.round(t.amount)}|${String(t.description || '').trim().toLowerCase()}`)
+    );
+
+    return items.filter((item) => {
+      const key = `${Math.round(Number(item.amount) || 0)}|${String(item.description || '').trim().toLowerCase()}`;
+      return !seen.has(key);
+    });
+  } catch (err) {
+    console.warn('[webhook] Gagal memeriksa duplikat transaksi:', err.message);
+    return items;
+  }
+}
+
+/**
+ * Apakah hasil parser regex sudah lengkap dan aman dicatat langsung?
+ *
+ * Aturannya: jumlah transaksi yang terbaca >= jumlah nominal yang disebut.
+ * Kalau nominal lebih banyak dari transaksi (mis. "sate 45rb terus rokok 35rb"),
+ * berarti ada yang belum tertangkap -> serahkan ke AI.
+ */
+function isConfidentParse(parsed, text) {
+  if (!parsed) return false;
+  if (parsed.isPocketShift && parsed.data) return true;
+  if (parsed.isTransfer && parsed.data) return true;
+
+  if (parsed.isTransaction && Array.isArray(parsed.items) && parsed.items.length > 0) {
+    const nominalCount = countNominals(text);
+    return nominalCount > 0 && parsed.items.length >= nominalCount;
+  }
+  return false;
+}
+
+const ANALYSIS_HINTS = [
+  'berapa', 'paling', 'boros', 'hemat', 'total', 'sisa', 'budget', 'anggaran',
+  'banding', 'naik', 'turun', 'bulan ini', 'minggu ini', 'hari ini', 'jatah',
+  'rekap', 'laporan', 'vs', 'sampai',
+];
+
+function looksLikeAnalysisQuestion(text) {
+  const t = String(text || '').toLowerCase();
+  return t.includes('?') || ANALYSIS_HINTS.some((hint) => t.includes(hint));
+}
+
+/**
+ * Kirim pesan ke AI lalu eksekusi hasilnya.
+ * true  = pesan sudah ditangani (hentikan rantai handler)
+ * false = lanjut ke parser regex / balasan default
+ */
+async function runAiBranch(userNumber, from, text, senderName) {
+  const gate = aiGate(userNumber);
+  if (!gate.allowed) {
+    if (gate.reason === 'limited') {
+      await notifyAiIssue(
+        from,
+        userNumber,
+        '⏳ _Mode hemat aktif: asisten AI diliburkan sementara karena terlalu banyak permintaan. Pesan transaksi tetap saya proses seperti biasa._'
+      );
+    }
+    return false;
+  }
+
+  // Pesan user sudah disimpan oleh route; ambil konteks yang relevan.
+  const pending = await takePending(userNumber);
+  const history = await getRecentHistory(userNumber);
+
+  let facts = null;
+  if (looksLikeAnalysisQuestion(text)) {
+    try {
+      facts = await buildFacts(userNumber);
+    } catch (factsErr) {
+      console.warn('[webhook] Gagal menyiapkan data keuangan untuk AI:', factsErr.message);
+    }
+  }
+
+  const aiResult = await parseChatWithAI(text, senderName, {
+    history,
+    pending: pending ? pending.question : null,
+    facts,
+  });
+
+  if (!aiResult) return false;
+
+  if (aiResult.quotaExceeded) {
+    await notifyAiIssue(
+      from,
+      userNumber,
+      '⚠️ _Kuota AI sedang habis. Pesan transaksi tetap saya proses dengan mode cepat (tanpa AI), tapi obrolan bebas belum bisa dilayani._'
+    );
+    return false;
+  }
+
+  if (aiResult.unavailable) {
+    await notifyAiIssue(
+      from,
+      userNumber,
+      '⚠️ _Asisten AI sedang tidak tersedia. Pesan Anda tetap saya proses dengan mode cepat (tanpa AI)._\n_Cek status: buka /health pada service OCR._'
+    );
+    return false;
+  }
+
+  let handled = false;
+
+  // A. Transaksi keuangan hasil ekstraksi AI
+  if (aiResult.isFinancial && Array.isArray(aiResult.transactions) && aiResult.transactions.length > 0) {
+    const freshItems = await filterDuplicateTransactions(userNumber, aiResult.transactions);
+
+    if (freshItems.length === 0) {
+      // Semua sudah tercatat barusan -> jangan dobel, cukup jawab.
+      const msg =
+        aiResult.friendlyResponse ||
+        'Catatan itu sudah masuk pembukuan barusan, jadi tidak saya catat dua kali ya.';
+      await sendWhatsAppMessage(from, msg);
+      await saveMessage(userNumber, 'assistant', msg);
+      return true;
+    }
+
+    await executeTransactionsOperation(
+      userNumber,
+      from,
+      freshItems,
+      'gemini_chat',
+      '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
+    );
+    handled = true;
+  } else if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
+    // B. Pemindahan saldo / transfer
+    await executeTransferOperation(userNumber, from, aiResult.transfer);
+    handled = true;
+  } else if (aiResult.isFinancial && aiResult.pocketShift && aiResult.pocketShift.isShift) {
+    // B1. Pergeseran anggaran antar kantong
+    await executePocketShiftOperation(userNumber, from, aiResult.pocketShift);
+    handled = true;
+  } else if (aiResult.friendlyResponse) {
+    // C. Jawaban ramah / pertanyaan / permintaan klarifikasi
+    await sendWhatsAppMessage(from, aiResult.friendlyResponse);
+    handled = true;
+  }
+
+  // Simpan pertanyaan klarifikasi supaya jawaban pendek berikutnya nyambung.
+  const needsClarification =
+    aiResult.needsClarification || (!handled && Number(aiResult.confidence) < 0.6);
+  if (needsClarification) {
+    await setPending(userNumber, aiResult.friendlyResponse || 'Boleh diperjelas nominalnya?', {
+      pesan_sebelumnya: text,
+      pertanyaan: aiResult.friendlyResponse || null,
+      confidence: aiResult.confidence,
+      kategori_rabaan: (aiResult.transactions || []).map((t) => ({
+        amount: t.amount,
+        description: t.description,
+        category: t.category,
+      })),
+    });
+  }
+
+  // Catat balasan asisten ke memori (untuk konteks pesan berikutnya).
+  if (aiResult.friendlyResponse) {
+    await saveMessage(userNumber, 'assistant', aiResult.friendlyResponse);
+  } else if (handled) {
+    const n = (aiResult.transactions || []).length;
+    await saveMessage(
+      userNumber,
+      'assistant',
+      n > 0 ? `(mencatat ${n} transaksi: ${(aiResult.transactions || []).map((t) => `${t.description} ${t.amount}`).join(', ')})` : '(menangani perintah)'
+    );
+  }
+
+  return handled;
 }
 
 router.post('/webhook', async (req, res) => {
@@ -665,7 +914,12 @@ router.post('/webhook', async (req, res) => {
 *10. Cek Rekap & Ekspor:*
 • \`rekap\` (hari ini) / \`rekap minggu ini\` / \`rekap bulan ini\`
 • \`export excel\` (unduh laporan file Excel)
-• \`restart keuangan\` (hapus semua data — konfirmasi 2 langkah)`;
+• \`restart keuangan\` (hapus semua data — konfirmasi 2 langkah)
+
+*11. Aturan Pribadi & Insight AI:*
+• \`kalau aku bilang ngopi masuk nongkrong\` (kata kunci otomatis masuk kantong tertentu)
+• \`daftar aturan\` / \`hapus aturan ngopi\`
+• \`insight\` (AI meringkas tren & saran dari data Anda)`;
 
         return await sendWhatsAppMessage(from, helpMessage);
       }
@@ -1096,6 +1350,45 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(from, reply);
       }
 
+      // 2h-2. ATURAN KATEGORI PRIBADI
+      if (parsed.action === 'list_rules') {
+        const rules = await listRules(userNumber);
+        return await sendWhatsAppMessage(
+          from,
+          `⚙️ *ATURAN KATEGORI PRIBADI*\n\n${formatRuleList(rules)}\n\n` +
+            `_Tambah: \`kalau aku bilang ngopi masuk nongkrong\`_\n` +
+            `_Hapus: \`hapus aturan ngopi\`_`
+        );
+      }
+
+      if (parsed.action === 'add_rule') {
+        const res = await addRule(userNumber, parsed.keyword, parsed.categoryInput);
+        if (!res.success) {
+          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+        }
+        return await sendWhatsAppMessage(
+          from,
+          `${res.isNew ? '✅ *Aturan Baru Disimpan!*' : '✅ *Aturan Diperbarui!*'}\n\n` +
+            `• 🔑 Kata kunci: *${res.rule.keyword}*\n` +
+            `• 🏷️ Otomatis masuk: *${res.rule.category}*\n\n` +
+            `_Mulai sekarang setiap transaksi yang menyebut "${res.rule.keyword}" akan masuk kantong itu._`
+        );
+      }
+
+      if (parsed.action === 'remove_rule') {
+        const res = await removeRule(userNumber, parsed.keyword);
+        if (!res.success) {
+          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+        }
+        return await sendWhatsAppMessage(from, `🗑️ Aturan *${res.rule.keyword}* dinonaktifkan.`);
+      }
+
+      if (parsed.action === 'trigger_weekly_insight') {
+        await sendWhatsAppMessage(from, '⏳ Menyusun insight mingguan dari data Anda...');
+        await executeWeeklyInsight(userNumber, true);
+        return;
+      }
+
       // 2i. REKAP LAPORAN
       if (parsed.action === 'rekap') {
         const { start, end, label } = getPeriodRange(parsed.period);
@@ -1220,54 +1513,55 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
-    // 3. JIKA PESAN PERCAKAPAN ALAMI / BEBAS (CONVERSATIONAL TEXT)
-    // Jika user chat santai, cerita panjang, gaul, atau tanya saran -> proses via Gemini AI
-    const isConversational = isConversationalText(text);
+    // 3. Jalur cepat: simpan dulu pesan user ke memori, supaya AI tetap punya
+    //    konteks walau pesan ini ternyata cukup dicatat lewat parser regex.
+    await saveMessage(userNumber, 'user', text);
 
-    if (isConversational) {
-      console.log(`[webhook] Teks terdeteksi percakapan bebas/santai. Memproses via Gemini AI: "${text}"`);
-      const aiResult = await parseChatWithAI(text, senderName);
-
-      if (aiResult) {
-        // A. Transaksi Keuangan yang diekstrak oleh AI
-        if (aiResult.isFinancial && aiResult.transactions && aiResult.transactions.length > 0) {
-          return await executeTransactionsOperation(
-            userNumber,
-            from,
-            aiResult.transactions,
-            'gemini_chat',
-            '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
-          );
-        }
-
-        // B. Pemindahan Saldo / Transfer yang diekstrak oleh AI
-        if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
-          return await executeTransferOperation(userNumber, from, aiResult.transfer);
-        }
-
-        // B1. Pergeseran Anggaran Antar Kantong yang diekstrak oleh AI
-        if (aiResult.isFinancial && aiResult.pocketShift && aiResult.pocketShift.isShift) {
-          return await executePocketShiftOperation(userNumber, from, aiResult.pocketShift);
-        }
-
-        // C. Percakapan umum / Pertanyaan keuangan / Sapaan ramah
-        if (aiResult.friendlyResponse) {
-          return await sendWhatsAppMessage(from, aiResult.friendlyResponse);
-        }
+    // 3a. JALUR CEPAT: parser regex untuk pesan yang sudah pasti & lengkap.
+    //    "makan siang 35rb" tidak perlu memanggil AI (hemat kuota, respons instan).
+    const adaKlarifikasi = await hasPendingClarification(userNumber);
+    if (!adaKlarifikasi && isConfidentParse(parsed, text)) {
+      if (parsed.isPocketShift && parsed.data) {
+        const reply = await executePocketShiftOperation(userNumber, from, parsed.data);
+        await saveMessage(userNumber, 'assistant', `(anggaran digeser: ${parsed.data.fromPocket} -> ${parsed.data.toPocket} ${parsed.data.amount})`);
+        return reply;
+      }
+      if (parsed.isTransfer && parsed.data) {
+        const reply = await executeTransferOperation(userNumber, from, parsed.data);
+        await saveMessage(userNumber, 'assistant', `(transfer dicatat: ${parsed.data.amount} ke ${parsed.data.toTarget || 'kantong'})`);
+        return reply;
+      }
+      const items = parsed.items || (parsed.data ? [parsed.data] : []);
+      if (items.length > 0) {
+        const reply = await executeTransactionsOperation(
+          userNumber,
+          from,
+          items,
+          items.length > 1 ? 'manual_multi' : 'manual'
+        );
+        // Konfirmasi ini penting: jadi riwayat AI menandakan transaksi SUDAH tercatat.
+        await saveMessage(
+          userNumber,
+          'assistant',
+          `(tercatat: ${items.map((item) => `${item.description} ${item.amount}`).join(', ')})`
+        );
+        return reply;
       }
     }
 
-    // 4. JIKA BUKAN PERCAKAPAN BEBAS ATAU AI GAGAL / TIMEOUT:
-    // Gunakan Rule-Based NLP Parser untuk transaksi cepat & terstruktur
-    if (parsed.isPocketShift && parsed.data) {
-      return await executePocketShiftOperation(userNumber, from, parsed.data);
-    }
+    // 4. AI: menjawab klarifikasi yang tertunda, obrolan bebas, pertanyaan data,
+    //    atau pesan yang nominalnya belum lengkap tertangkap parser.
+    if (await runAiBranch(userNumber, from, text, senderName)) return;
 
-    if (parsed.isTransfer && parsed.data) {
-      return await executeTransferOperation(userNumber, from, parsed.data);
-    }
-
-    if (parsed.isTransaction) {
+    // 5. AI tidak tersedia: tetap catat apa yang bisa dibaca parser regex,
+    //    daripada menjawab "format pesan belum dikenali".
+    if (parsed && (parsed.isPocketShift || parsed.isTransfer || (parsed.isTransaction && parsed.items && parsed.items.length > 0))) {
+      if (parsed.isPocketShift && parsed.data) {
+        return await executePocketShiftOperation(userNumber, from, parsed.data);
+      }
+      if (parsed.isTransfer && parsed.data) {
+        return await executeTransferOperation(userNumber, from, parsed.data);
+      }
       const items = parsed.items || (parsed.data ? [parsed.data] : []);
       if (items.length > 0) {
         return await executeTransactionsOperation(
@@ -1276,36 +1570,6 @@ router.post('/webhook', async (req, res) => {
           items,
           items.length > 1 ? 'manual_multi' : 'manual'
         );
-      }
-    }
-
-    // 5. JIKA MASIH BELUM DIKENALI REGEX, COBA GEMINI AI SEBAGAI FALLBACK CERDAS
-    if (!isConversational) {
-      console.log(`[webhook] Mencoba fallback Gemini AI untuk teks tidak dikenal: "${text}"`);
-      const aiResult = await parseChatWithAI(text, senderName);
-
-      if (aiResult) {
-        if (aiResult.isFinancial && aiResult.transactions && aiResult.transactions.length > 0) {
-          return await executeTransactionsOperation(
-            userNumber,
-            from,
-            aiResult.transactions,
-            'gemini_chat',
-            '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
-          );
-        }
-
-        if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
-          return await executeTransferOperation(userNumber, from, aiResult.transfer);
-        }
-
-        if (aiResult.isFinancial && aiResult.pocketShift && aiResult.pocketShift.isShift) {
-          return await executePocketShiftOperation(userNumber, from, aiResult.pocketShift);
-        }
-
-        if (aiResult.friendlyResponse) {
-          return await sendWhatsAppMessage(from, aiResult.friendlyResponse);
-        }
       }
     }
 

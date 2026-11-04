@@ -60,6 +60,13 @@ services:
       - PRIMARY_USER_NUMBER=${PRIMARY_USER_NUMBER:-}
       - BOT_NUMBERS=${BOT_NUMBERS:-}
       - LID_ALIASES=${LID_ALIASES:-}
+      # Asisten AI: kill switch, batas per pengguna/jam, timeout permintaan
+      - AI_ENABLED=${AI_ENABLED:-true}
+      - AI_RATE_LIMIT_PER_HOUR=${AI_RATE_LIMIT_PER_HOUR:-30}
+      - AI_TIMEOUT_MS=${AI_TIMEOUT_MS:-15000}
+      - AI_HISTORY_TURNS=${AI_HISTORY_TURNS:-6}
+      - AI_PENDING_TTL_MS=${AI_PENDING_TTL_MS:-300000}
+      - AI_DUPLICATE_WINDOW_MS=${AI_DUPLICATE_WINDOW_MS:-180000}
       - MEDIA_DIR=/app/media
       - TZ=${TZ:-Asia/Makassar}
     volumes:
@@ -78,6 +85,9 @@ services:
     environment:
       - PORT=8000
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_ENABLED=${AI_ENABLED:-true}
+      # Minimum 10000 ms (batas API Gemini)
+      - GEMINI_TIMEOUT_MS=${GEMINI_TIMEOUT_MS:-12000}
       - MEDIA_DIR=/app/media
     volumes:
       - shared_media:/app/media

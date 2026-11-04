@@ -1,6 +1,7 @@
 fastapi==0.115.6
 uvicorn==0.34.0
-pydantic==2.10.4
+# pydantic harus >= 2.12.5 karena google-genai 2.34.0 mensyaratkan begitu
+pydantic==2.14.2
 pillow==11.0.0
-google-generativeai==0.8.3
+google-genai==2.34.0
 python-dotenv==1.0.1

@@ -3,7 +3,7 @@
 'use strict';
 
 const assert = require('assert');
-const { parseMessage, parseNominal, detectCategory } = require('../src/services/nlpParser');
+const { parseMessage, parseNominal, detectCategory, countNominals } = require('../src/services/nlpParser');
 
 let pass = 0;
 const cases = [];
@@ -98,6 +98,38 @@ it('perintah dasar lain dikenali', () => {
   assert.strictEqual(parseMessage('rekap bulan ini').action, 'rekap');
   assert.strictEqual(parseMessage('batal').action, 'undo');
   assert.strictEqual(parseMessage('budget').action, 'budget');
+});
+
+// --- countNominals: penentu jalur cepat (regex) vs AI ---
+it('countNominals: tiga nominal di satu pesan', () => {
+  assert.strictEqual(countNominals('makan 25rb, es teh 5rb, parkir 2rb'), 3);
+});
+
+it('countNominals: tanggal & kuantitas tidak dihitung', () => {
+  assert.strictEqual(countNominals('isi bensin 30rb tanggal 21'), 1);
+  assert.strictEqual(countNominals('beli 2 porsi nasi goreng 50rb'), 1);
+});
+
+it('countNominals: dua nominal walau tanpa koma', () => {
+  assert.strictEqual(countNominals('tadi makan sate 45rb terus beli rokok 35rb'), 2);
+});
+
+// --- aturan kategori pribadi & insight ---
+it('perintah aturan kategori pribadi dikenali', () => {
+  const add = parseMessage('kalau aku bilang ngopi masuk nongkrong');
+  assert.strictEqual(add.action, 'add_rule');
+  assert.strictEqual(add.keyword, 'ngopi');
+  assert.strictEqual(add.categoryInput, 'nongkrong');
+  assert.strictEqual(parseMessage('hapus aturan ngopi').action, 'remove_rule');
+  assert.strictEqual(parseMessage('daftar aturan').action, 'list_rules');
+});
+
+it('perintah insight dikenali', () => {
+  assert.strictEqual(parseMessage('insight').action, 'trigger_weekly_insight');
+});
+
+it('pesan transaksi tidak salah dibaca sebagai aturan', () => {
+  assert.ok(parseMessage('bakso 25rb').isTransaction, 'harus tetap transaksi');
 });
 
 // --- runner ---

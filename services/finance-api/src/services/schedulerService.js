@@ -3,6 +3,7 @@ const dayjs = require('dayjs');
 const { getPayCycleRange, formatRupiah, checkBudgetStatus } = require('./budgetService');
 const { sendWhatsAppMessage } = require('./waClient');
 const { detectCategory } = require('./nlpParser');
+const { generateNightlyInsight, generateWeeklyInsight, collectInsightData } = require('./insightService');
 const {
   BOT_NUMBERS,
   LID_ALIASES,
@@ -14,6 +15,7 @@ const {
 const sentNightlyReminders = new Set();
 const sentAllocationReminders22 = new Set();
 const sentBillReminders = new Set();
+const sentWeeklyInsights = new Set();
 
 /**
  * Otomatis konsolidasi data transaksi yang tersimpan di bawah LID ke nomor HP utama
@@ -312,6 +314,18 @@ async function executeBooster1(userNumber, isManual = false) {
  * Pengingat Malam Hari Otomatis jam 22:30 (10.30 Malam)
  */
 async function executeNightlyReminder(userNumber, isManual = false) {
+  // Coba minta AI menulis rekapnya (lebih natural, angka tetap dari database).
+  try {
+    const ai = await generateNightlyInsight(userNumber, 'Bro');
+    if (ai && ai.text) {
+      const badge = isManual ? '🧪 _(Simulasi Pengingat Malam)_\n\n' : '';
+      await sendWhatsAppMessage(userNumber, badge + ai.text);
+      return { success: true, engine: ai.engine || 'ai' };
+    }
+  } catch (err) {
+    console.warn('[scheduler] Insight malam via AI gagal, pakai template:', err.message);
+  }
+
   const now = dayjs();
   const startOfDay = now.startOf('day').toDate();
   const endOfDay = now.endOf('day').toDate();
@@ -376,6 +390,48 @@ async function executeNightlyReminder(userNumber, isManual = false) {
   }
 
   return { success: true, count: todayExpenses.length };
+}
+
+/**
+ * Insight mingguan: AI menulis ringkasan tren + saran, template sebagai cadangan.
+ */
+async function executeWeeklyInsight(userNumber, isManual = false) {
+  const badge = isManual ? '🧪 _(Insight percobaan)_\n\n' : '';
+
+  try {
+    const ai = await generateWeeklyInsight(userNumber, 'Bro');
+    if (ai && ai.text) {
+      await sendWhatsAppMessage(userNumber, badge + ai.text);
+      return { success: true, engine: ai.engine || 'ai' };
+    }
+  } catch (err) {
+    console.warn('[scheduler] Insight mingguan via AI gagal, pakai template:', err.message);
+  }
+
+  // Cadangan: rangkuman dari angka database tanpa AI.
+  try {
+    const data = await collectInsightData(userNumber);
+    const top = data.kategori_terboros;
+    const anomalies = (data.anomali_kenaikan || [])
+      .slice(0, 3)
+      .map((a) => `• ${a.kategori}: naik ${a.kenaikan_persen}% (per hari ${formatRupiah(a.per_hari_sekarang)} vs ${formatRupiah(a.per_hari_siklus_lalu)})`)
+      .join('\n');
+
+    const message =
+      `📊 *INSIGHT MINGGUAN*\n` +
+      `🗓️ *Siklus:* ${data.periode_siklus} (sisa ${data.sisa_hari_ke_gajian} hari)\n\n` +
+      `💸 *Pengeluaran siklus ini:* ${formatRupiah(data.total_pengeluaran_siklus)}\n` +
+      `📉 *Siklus lalu:* ${formatRupiah(data.perbandingan_siklus_lalu.total_pengeluaran)}\n` +
+      (top ? `🏷️ *Paling boros:* ${top.kategori} ${formatRupiah(top.nominal)}\n` : '') +
+      (anomalies ? `\n⚠️ *Kenaikan mencolok:*\n${anomalies}\n` : '') +
+      `\n_Ketik \`budget\` untuk rincian lengkap._`;
+
+    await sendWhatsAppMessage(userNumber, badge + message);
+    return { success: true, engine: 'template' };
+  } catch (err) {
+    console.error(`[scheduler] Gagal menyusun insight mingguan untuk ${userNumber}:`, err.message);
+    return { success: false, error: err.message };
+  }
 }
 
 /**
@@ -461,6 +517,18 @@ function startRecurringScheduler() {
         }
       }
 
+      // 2d. Insight mingguan setiap Minggu jam 20:00
+      if (now.day() === 0 && hour === 20 && minute <= 15) {
+        const todayStr = now.format('YYYY-MM-DD');
+        for (const userNumber of users) {
+          const key = `${userNumber}_weekly_${todayStr}`;
+          if (!sentWeeklyInsights.has(key)) {
+            await executeWeeklyInsight(userNumber, false);
+            sentWeeklyInsights.add(key);
+          }
+        }
+      }
+
       // 3. Eksekusi Pengingat Malam Hari Otomatis jam 22:30 malam (rentang 22:30 - 22:40)
       if (hour === 22 && minute >= 30 && minute <= 40) {
         const todayStr = now.format('YYYY-MM-DD');
@@ -491,5 +559,6 @@ module.exports = {
   executeBooster1,
   executeNightlyReminder,
   executeAllocationReminder22,
+  executeWeeklyInsight,
   startRecurringScheduler,
 };
