@@ -191,6 +191,31 @@ it('ralat percakapan alami (conversational edit) dikenali dengan tepat', () => {
   assert.ok(parseMessage('tadi beli bensin 30rb').isTransaction);
 });
 
+it('subsidi silang kantong (cross-pocket funding) dikenali', () => {
+  const a = parseMessage('beli kuota 100rb, lebihnya ambil dari makanan');
+  assert.strictEqual(a.isCrossPocket, true);
+  assert.strictEqual(a.data.amount, 100000);
+  assert.strictEqual(a.data.description, 'kuota');
+  assert.strictEqual(a.data.donorInput, 'makanan');
+
+  const b = parseMessage('beli kuota 100k, sisanya potong dari uang makan');
+  assert.strictEqual(b.isCrossPocket, true);
+  assert.strictEqual(b.data.donorInput, 'makan');
+
+  const c = parseMessage('beli sepatu 300rb, lebihnya ambil dari tabungan');
+  assert.strictEqual(c.isCrossPocket, true);
+  assert.strictEqual(c.data.description, 'sepatu');
+  assert.strictEqual(c.data.donorInput, 'tabungan');
+
+  const d = parseMessage('beli kuota 100rb, kekurangannya dari tabungan');
+  assert.strictEqual(d.isCrossPocket, true);
+  assert.strictEqual(d.data.donorInput, 'tabungan');
+
+  // Tidak boleh menelan transaksi biasa maupun transfer bank
+  assert.ok(parseMessage('beli kuota 100rb').isTransaction);
+  assert.ok(parseMessage('pindah 800rb ke seabank').isTransfer);
+});
+
 // --- runner ---
 let failed = 0;
 for (const c of cases) {

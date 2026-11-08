@@ -939,6 +939,104 @@ return null;
 // --- Edit Transaksi (Quick Edit Terakhir & Targeted Edit Berdasarkan Kata Kunci / Bulan) ---
 
 /**
+ * Subsidi Silang Kantong (Cross-Pocket Funding)
+ * "beli kuota 100rb, lebihnya ambil dari makanan"
+ * "beli kuota 100k, sisanya potong dari uang makan"
+ * "beli kuota 100rb, nombok dari uang makan"
+ * "beli kuota 100rb, kekurangannya dari tabungan"
+ */
+const DONOR_PREDICATE =
+  '(?:lebihnya|sisanya|kekurangannya|selisihnya|nomboknya|tambalannya|tambalannya|sisa|lebih|nombok|tambalan|defisit)';
+
+function parseDonorCategory(raw) {
+  if (!raw) return null;
+  return String(raw)
+    .trim()
+    .replace(/^(?:uang|dana|budget|anggaran|kantong|pos|jatah|dompet)\s+/i, '')
+    .replace(/\s+(?:dong|ya|deh|aja|plis)$/i, '')
+    .trim() || null;
+}
+
+function parseCrossPocketSubsidy(rawText) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const text = rawText.trim();
+
+  // Deteksi indikasi tambal kantong
+  if (!/(?:ambil|potong|pakai|gunakan|curi|pinjam|geser|nombok|tambal|alihkan|subsidi|bayar|dari)/i.test(text)) {
+    return null;
+  }
+  if (!/(?:lebih|sisa|kekurangan|kekurangan|selisih|nombok|tambalan|defisit|kantong|dana)/i.test(text)) {
+    return null;
+  }
+  // Harus ada penghubung "dari" + nama kantong (bukan sekadar transfer nominal)
+  if (!/\bdari\b/i.test(text)) {
+    return null;
+  }
+
+  const AMOUNT = '([0-9]+(?:[.,][0-9]+)?\\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\\.[0-9]{3})+)';
+
+  // Pola A: "<item> <nominal> ... <predikat> (?:ambil|potong|pakai|gunakan|...) dari <kantong>"
+  const patterns = [
+    new RegExp(
+      '^(?:beli|bayar|catat|makan|jajan|isi|top\s?up)\\s+(.+?)\\s+' + AMOUNT +
+      '\\s*(?:,|\\.|;|\\s)+\\s*(?:' + DONOR_PREDICATE + ')\\s*(?:nya)?\\s*(?:ambil|potong|pakai|gunakan|pinjam|curi|nombok|tambal|alihkan|dari|ke|di)\\s+(?:dari\\s+)?(?:uang|dana|budget|anggaran|kantong|pos|jatah|dompet)?\\s*(.+)$',
+      'i'
+    ),
+    new RegExp(
+      '^(?:beli|bayar|catat|makan|jajan|isi|top\\s?up)\\s+(.+?)\\s+' + AMOUNT +
+      '\\s*(?:,|\\.|;|\\s)+\\s*(?:' + DONOR_PREDICATE + ')\\s*(?:nya)?\\s+(?:nombok|tambal|ambil|potong|bayar|subsidi|defisit)(?:nya)?\\s+(.+)$',
+      'i'
+    ),
+    new RegExp(
+      '^(?:beli|bayar|catat|makan|jajan|isi|top\\s?up)\\s+(.+?)\\s+' + AMOUNT +
+      '\\s+(?:' + DONOR_PREDICATE + ')\\s*(?:nya)?\\s*(?:ambil|potong|pakai|gunakan|pinjam|curi|nombok|tambal|alihkan)\\s+(?:dari\\s+)?(?:uang|dana|budget|anggaran|kantong|pos|jatah|dompet)?\\s*(.+)$',
+      'i'
+    ),
+    new RegExp(
+      '^(?:beli|bayar|catat|makan|jajan|isi|top\\s?up)\\s+(.+?)\\s+' + AMOUNT +
+      '\\s*(?:,|\\.|;|\\s)+\\s*(?:' + DONOR_PREDICATE + ')\\s*(?:nya)?\\s*(?:dari|diambil\\s+dari|di\\s+)\s+(?:uang|dana|budget|anggaran|kantong|pos|jatah|dompet)?\\s*(.+)$',
+      'i'
+    ),
+  ];
+
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+
+    const itemRaw = m[1].trim();
+    const amount = parseNominal(m[2]);
+    const donorRaw = m[3].trim();
+
+    if (!amount || amount <= 0) continue;
+
+    const donorInput = parseDonorCategory(donorRaw);
+    if (!donorInput) continue;
+
+    // Bersihkan item dari kata bantu
+    const cleanItem = itemRaw
+      .replace(/^(?:beli|bayar|catat|makan|jajan|isi|top\s?up)\s+/i, '')
+      .replace(/\s+(?:nya|nih|dong|ya)$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanItem) continue;
+
+    return {
+      isCommand: false,
+      isCrossPocket: true,
+      data: {
+        description: cleanItem,
+        amount,
+        donorInput,
+        rawText: text,
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
  * Parse pesan WhatsApp
  */
 function parseMessage(rawText) {
@@ -956,7 +1054,13 @@ function parseMessage(rawText) {
     };
   }
 
-  // 0b. Cek Pola Transfer / Pemindahan Dana Antar Bank & Kantong
+  // 0b. Cek Subsidi Silang Kantong (Cross-Pocket Funding)
+  const crossPocket = parseCrossPocketSubsidy(text);
+  if (crossPocket) {
+    return crossPocket;
+  }
+
+  // 0c. Cek Pola Transfer / Pemindahan Dana Antar Bank & Kantong
   const fundTransfer = parseFundTransfer(text);
   if (fundTransfer) {
     if (fundTransfer.isGuide) {
@@ -1318,5 +1422,6 @@ module.exports = {
   isConversationalText,
   parsePocketShift,
   parseConversationalEdit,
+  parseCrossPocketSubsidy,
 };
 

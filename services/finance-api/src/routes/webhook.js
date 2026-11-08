@@ -186,6 +186,130 @@ function isAllowedSender(from) {
   return isSenderAllowed(from);
 }
 
+async function executeCrossPocketOperation(userNumber, from, pocketData) {
+  const { description, amount, donorInput } = pocketData;
+
+  const itemCategory = detectCategory(description, 'expense', amount);
+  const donorCategory = matchCategory(donorInput);
+
+  if (!donorCategory) {
+    const catList = Object.keys(DEFAULT_BUDGETS)
+      .map((c) => `• ${c}`)
+      .join('\n');
+    return await sendWhatsAppMessage(
+      from,
+      `⚠️ Kantong penambal *${donorInput}* tidak dikenali.\n\n` +
+        `Kantong yang tersedia:\n${catList}\n\n` +
+        `_Contoh: *beli kuota 100rb, lebihnya ambil dari makanan*_`
+    );
+  }
+
+  if (donorCategory === itemCategory) {
+    return await sendWhatsAppMessage(
+      from,
+      `⚠️ Kantong utama dan kantong penambal sama (${itemCategory}).\n` +
+        `_Sebutkan kantong lain, misal: lebihnya ambil dari tabungan._`
+    );
+  }
+
+  const itemStatus = await checkBudgetStatus(userNumber, itemCategory);
+  const donorStatus = await checkBudgetStatus(userNumber, donorCategory);
+
+  const itemAvailable = itemStatus.hasBudget ? Math.max(0, itemStatus.remaining) : 0;
+  const donorAvailable = donorStatus.hasBudget ? Math.max(0, donorStatus.remaining) : 0;
+
+  // Kasus A: kantong utama masih cukup -> catat normal, tidak perlu subsidi
+  if (itemAvailable >= amount) {
+    return await executeTransactionsOperation(
+      userNumber,
+      from,
+      [
+        {
+          type: 'expense',
+          amount,
+          description,
+          category: itemCategory,
+          merchantName: null,
+          customDate: null,
+          source: 'manual',
+        },
+      ],
+      'manual'
+    );
+  }
+
+  const shortfall = amount - itemAvailable;
+
+  if (donorAvailable < shortfall) {
+    return await sendWhatsAppMessage(
+      from,
+      `🚫 *Subsidi Silang Tidak Cukup!*\n\n` +
+        `• 💰 Total belanja *${description}*: ${formatRupiah(amount)}\n` +
+        `• 🏷️ Sisa kuota *${itemCategory}*: ${formatRupiah(itemAvailable)}\n` +
+        `• ❗ Kekurangan yang perlu ditambal: *${formatRupiah(shortfall)}*\n` +
+        `• 🏦 Sisa kuota *${donorCategory}*: ${formatRupiah(donorAvailable)}\n\n` +
+        `_Kantong ${donorCategory} belum cukup menambal. Transaksi dibatalkan agar tidak melebihi total anggaran._`
+    );
+  }
+
+  // Kasus B: split dua transaksi (kantong utama + kantong penambal)
+  const primaryAmount = itemAvailable;
+  const subsidyAmount = shortfall;
+
+  if (primaryAmount > 0) {
+    await prisma.transaction.create({
+      data: {
+        userNumber,
+        type: 'expense',
+        source: 'manual',
+        amount: primaryAmount,
+        description,
+        category: itemCategory,
+      },
+    });
+  }
+
+  await prisma.transaction.create({
+    data: {
+      userNumber,
+      type: 'expense',
+      source: 'manual',
+      amount: subsidyAmount,
+      description: `${description} (subsidi silang dari ${donorCategory})`,
+      category: donorCategory,
+    },
+  });
+
+  const itemAfter = await checkBudgetStatus(userNumber, itemCategory);
+  const donorAfter = await checkBudgetStatus(userNumber, donorCategory);
+
+  const dailyBlock = (status) => {
+    if (!status || !status.hasBudget || !(status.isDailyCategory || status.todayDailyLimit > 0)) return '';
+    if (status.isTodayOver) {
+      return `   └ Jatah hari ini: Terpakai ${formatRupiah(status.todaySpent)} / ${formatRupiah(status.todayDailyLimit)} (Over ${formatRupiah(Math.abs(status.todayDailyRemaining))}, esok ${formatRupiah(status.nextDayAllowance)})`;
+    }
+    return `   └ Jatah hari ini: Sisa ${formatRupiah(status.todayDailyRemaining)} (Keluar ${formatRupiah(status.todaySpent)} / ${formatRupiah(status.todayDailyLimit)})`;
+  };
+
+  const reply =
+    `💸 *BELANJA DICATAT DENGAN SUBSIDI SILANG KANTONG*\n\n` +
+    `• 📦 Barang/Keterangan: *${description}*\n` +
+    `• 💰 Total Belanja: *${formatRupiah(amount)}*\n\n` +
+    `🏷️ *Rincian Pemotongan:*\n` +
+    (primaryAmount > 0
+      ? `1. ${itemCategory}: *${formatRupiah(primaryAmount)}* (menghabiskan sisa kuota kantong ini)\n` +
+        `   └ Sisa kuota sekarang: ${formatRupiah(itemAfter.remaining)}\n` +
+        (dailyBlock(itemAfter) ? dailyBlock(itemAfter) + '\n' : '') +
+        `2. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (ditambal dari kantong ini)\n`
+      : `1. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (kantong utama kosong, seluruhnya ditambal dari sini)\n`) +
+    `   └ Sisa kuota sekarang: ${formatRupiah(donorAfter.remaining)}\n` +
+    (dailyBlock(donorAfter) ? dailyBlock(donorAfter) + '\n' : '') +
+    `\n✅ Total terpotong: ${formatRupiah(primaryAmount + subsidyAmount)} (cocok dengan total belanja)\n` +
+    `_Ketik *budget* untuk melihat seluruh status kuota kantong._`;
+
+  return await sendWhatsAppMessage(from, reply);
+}
+
 async function executePocketShiftOperation(userNumber, from, shiftData) {
   const { amount, fromPocket, toPocket } = shiftData;
 
@@ -569,6 +693,7 @@ async function filterDuplicateTransactions(userNumber, items) {
 function isConfidentParse(parsed, text) {
   if (!parsed) return false;
   if (parsed.isPocketShift && parsed.data) return true;
+  if (parsed.isCrossPocket && parsed.data) return true;
   if (parsed.isTransfer && parsed.data) return true;
 
   if (parsed.isTransaction && Array.isArray(parsed.items) && parsed.items.length > 0) {
@@ -914,6 +1039,7 @@ router.post('/webhook', async (req, res) => {
 • \`budget\` (cek kuota & sisa hari dalam siklus gajian)
 • \`budget hari ini\` / \`sisa hari ini\` (cek batas & sisa belanja hari ini)
 • \`jatah makan hari ini\` (cek jatah kategori tertentu hari ini)
+• \`beli kuota 100rb, lebihnya ambil dari makanan\` (subsidi silang antar kantong)
 • \`set budget bensin 250rb\` (ubah limit anggaran)
 • \`reset budget\` (kembalikan ke default Rp 4.600.000)
 
@@ -1677,6 +1803,11 @@ router.post('/webhook', async (req, res) => {
         await saveMessage(userNumber, 'assistant', `(anggaran digeser: ${parsed.data.fromPocket} -> ${parsed.data.toPocket} ${parsed.data.amount})`);
         return reply;
       }
+      if (parsed.isCrossPocket && parsed.data) {
+        const reply = await executeCrossPocketOperation(userNumber, from, parsed.data);
+        await saveMessage(userNumber, 'assistant', `(belanja subsidi silang: ${parsed.data.description} ${parsed.data.amount}, penambal ${parsed.data.donorInput})`);
+        return reply;
+      }
       if (parsed.isTransfer && parsed.data) {
         const reply = await executeTransferOperation(userNumber, from, parsed.data);
         await saveMessage(userNumber, 'assistant', `(transfer dicatat: ${parsed.data.amount} ke ${parsed.data.toTarget || 'kantong'})`);
@@ -1706,9 +1837,12 @@ router.post('/webhook', async (req, res) => {
 
     // 5. AI tidak tersedia: tetap catat apa yang bisa dibaca parser regex,
     //    daripada menjawab "format pesan belum dikenali".
-    if (parsed && (parsed.isPocketShift || parsed.isTransfer || (parsed.isTransaction && parsed.items && parsed.items.length > 0))) {
+    if (parsed && (parsed.isPocketShift || parsed.isCrossPocket || parsed.isTransfer || (parsed.isTransaction && parsed.items && parsed.items.length > 0))) {
       if (parsed.isPocketShift && parsed.data) {
         return await executePocketShiftOperation(userNumber, from, parsed.data);
+      }
+      if (parsed.isCrossPocket && parsed.data) {
+        return await executeCrossPocketOperation(userNumber, from, parsed.data);
       }
       if (parsed.isTransfer && parsed.data) {
         return await executeTransferOperation(userNumber, from, parsed.data);
