@@ -243,7 +243,10 @@ function parseFundTransfer(rawText) {
   const matchNominal = nominalRegex.exec(text);
 
   if (!matchNominal || isQuestionOrGuide) {
-    return { isGuide: true };
+    if (isQuestionOrGuide || lower.includes('dana') || lower.includes('saldo') || lower.includes('rekening')) {
+      return { isGuide: true };
+    }
+    return null;
   }
 
   const amount = parseNominal(matchNominal[1]);
@@ -766,6 +769,175 @@ function countNominals(rawText) {
   return matches.length;
 }
 
+function cleanTargetKeyword(kw) {
+if (!kw) return null;
+let s = kw.trim();
+s = s.replace(/^(?:yang|itu|ini|catatan|transaksi)\s+/i, '');
+s = s.replace(/\s+(?:yang|itu|ini|tadi|barusan)$/i, '');
+s = s.replace(/^(?:yang|itu|ini|tadi|barusan|transaksi|catatan|maksudnya|seharusnya|nominalnya|keterangannya|barangnya)$/i, '');
+s = s.trim();
+return s || null;
+}
+
+function parseConversationalEdit(rawText) {
+if (!rawText || typeof rawText !== 'string') return null;
+const text = rawText.trim();
+
+// 1. Kategori / Pindah Kantong
+// "pindahin kopi tadi ke kantong nongkrong dong"
+// "pindahin ke kantong nongkrong dong"
+// "geser sate tadi ke hiburan"
+const convCatMatch1 = text.match(
+  /^(?:tolong\s+)?(?:pindahin|pindahkan|geser|masukin|masukkan)\s+(?:catatan\s+|transaksi\s+)?(?:(.+?)\s+)?(?:tadi\s+|barusan\s+)?ke\s+(?:pos\s+|kantong\s+|kategori\s+)?([a-zA-Z0-9\s,&]+?)(?:\s+dong|\s+ya|\s+deh|\s+aja|\s+plis)?$/i
+);
+if (convCatMatch1) {
+  let target = cleanTargetKeyword(convCatMatch1[1]);
+  const catInput = convCatMatch1[2].trim();
+  if (catInput && !/^(?:tadi|barusan|dong|ya)$/i.test(catInput)) {
+    return {
+      isCommand: true,
+      action: 'conversational_edit',
+      subAction: 'edit_category',
+      targetKeyword: target,
+      categoryInput: catInput,
+    };
+  }
+}
+
+// "kopi tadi masukin ke nongkrong aja"
+const convCatMatch2 = text.match(
+  /^(?:tolong\s+)?(.+?)\s+(?:tadi\s+|barusan\s+)(?:masukin|masukkan|pindahin|pindahkan|geser)\s+ke\s+(?:pos\s+|kantong\s+|kategori\s+)?([a-zA-Z0-9\s,&]+?)(?:\s+dong|\s+ya|\s+deh|\s+aja|\s+plis)?$/i
+);
+if (convCatMatch2) {
+  let target = cleanTargetKeyword(convCatMatch2[1]);
+  const catInput = convCatMatch2[2].trim();
+  if (catInput && !/^(?:tadi|barusan|dong|ya)$/i.test(catInput)) {
+    return {
+      isCommand: true,
+      action: 'conversational_edit',
+      subAction: 'edit_category',
+      targetKeyword: target,
+      categoryInput: catInput,
+    };
+  }
+}
+
+// 2. Nominal Compare:
+// - "bukan 45rb tapi 35rb" / "maksudnya 35rb bukan 45rb" / "sate 35rb bukan 45rb"
+const convNomMatchCompare = text.match(
+  /^(?:eh\s+)?(?:salah(?:[,\s]+ketik|[,\s]+tulis)?[,\s]*)?(?:(?:catatan|transaksi)\s+)?(?:(.+?)\s+)?(?:tadi\s+|barusan\s+)?(?:salah(?:[,\s]+ketik|[,\s]+tulis)?[,\s]*)?(?:(?:bukan|bukanlah)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s*(?:,\s*|\s+)(?:tapi|melainkan|maksudnya|seharusnya)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)|(?:maksudnya|seharusnya)?\s*([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)\s*(?:,\s*|\s+)(?:bukan|bukanlah)\s+([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+))(?:\s+ya|\s+dong|\s+deh|\s+plis)?$/i
+);
+if (convNomMatchCompare) {
+  let target = cleanTargetKeyword(convNomMatchCompare[1]);
+  const oldAmtRaw = convNomMatchCompare[2] || convNomMatchCompare[5];
+  const newAmtRaw = convNomMatchCompare[3] || convNomMatchCompare[4];
+  const newAmount = parseNominal(newAmtRaw);
+  const oldAmount = parseNominal(oldAmtRaw);
+  if (newAmount && newAmount > 0) {
+    return {
+      isCommand: true,
+      action: 'conversational_edit',
+      subAction: 'edit_amount',
+      targetKeyword: target,
+      newAmount,
+      oldAmount: oldAmount || null,
+    };
+  }
+}
+
+// 3. Nominal Direct:
+// - "maksudnya 35rb" / "eh salah maksudnya 35rb" / "sate tadi maksudnya 35rb"
+// - "salah tulis tadi 35rb" / "eh salah nominalnya 35rb"
+const convNomMatchDirect = text.match(
+  /^(?:eh\s+)?(?:salah(?:[,\s]+ketik|[,\s]+tulis)?[,\s]*)?(?:(?:catatan|transaksi)\s+)?(?:(.+?)\s+)?(?:tadi\s+|barusan\s+)?(?:salah(?:[,\s]+ketik|[,\s]+tulis)?[,\s]*)?(?:maksudnya|seharusnya|nominalnya|ganti\s+jadi|ubah\s+jadi)?\s*([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+)(?:\s+ya|\s+dong|\s+deh|\s+plis)?$/i
+);
+if (convNomMatchDirect) {
+  if (/(?:salah|maksudnya|seharusnya|ganti|ubah|ralat)/i.test(text)) {
+    let target = cleanTargetKeyword(convNomMatchDirect[1]);
+    const newAmtRaw = convNomMatchDirect[2];
+    const newAmount = parseNominal(newAmtRaw);
+    if (newAmount && newAmount > 0) {
+      return {
+        isCommand: true,
+        action: 'conversational_edit',
+        subAction: 'edit_amount',
+        targetKeyword: target,
+        newAmount,
+      };
+    }
+  }
+}
+
+// 4. Deskripsi Compare:
+// - "yang 5rb tadi bukan es teh, tapi parkir"
+// - "bukan bakso tapi mie ayam"
+// - "yang tadi bukan es teh tapi kopi"
+const convDescMatchCompare = text.match(
+  /^(?:yang\s+)?(?:([0-9]+(?:[.,][0-9]+)?\s*(?:jt|juta|rb|ribu|k)?|[0-9]{1,3}(?:\.[0-9]{3})+|[a-zA-Z0-9\s]+?)\s*(?:tadi\s+|barusan\s+)?)?(?:(?:bukan|bukanlah)\s+(.+?)(?:,\s*|\s+)(?:tapi|melainkan)\s+(.+?))(?:\s+ya|\s+dong|\s+deh)?$/i
+);
+if (convDescMatchCompare) {
+  const rawTarget = (convDescMatchCompare[1] || '').trim();
+  const oldDesc = convDescMatchCompare[2].trim();
+  const newDesc = convDescMatchCompare[3].trim();
+  const targetAmount = parseNominal(rawTarget);
+  return {
+    isCommand: true,
+    action: 'conversational_edit',
+    subAction: 'edit_description',
+    targetKeyword: targetAmount ? null : cleanTargetKeyword(rawTarget),
+    targetAmount: targetAmount || null,
+    oldDescription: oldDesc,
+    newDescription: newDesc,
+  };
+}
+
+// 5. Deskripsi Direct:
+// - "keterangan tadi ganti jadi martabak" / "yang tadi ganti jadi martabak"
+const convDescMatchDirect = text.match(
+  /^(?:keterangan(?:nya)?|barang(?:nya)?|nama(?:nya)?|item(?:nya)?|yang\s+tadi)\s*(?:tadi\s+|barusan\s+)?(?:ganti\s+jadi|ubah\s+jadi|maksudnya)\s+(.+?)(?:\s+ya|\s+dong|\s+deh)?$/i
+);
+if (convDescMatchDirect) {
+  const newDesc = convDescMatchDirect[1].trim();
+  if (!parseNominal(newDesc)) {
+    return {
+      isCommand: true,
+      action: 'conversational_edit',
+      subAction: 'edit_description',
+      targetKeyword: null,
+      newDescription: newDesc,
+    };
+  }
+}
+
+// 6. Targeted Cancel / Delete Transaksi Tertarget
+// "batalin sate tadi" / "hapus catatan kopi tadi" / "batalkan transaksi sate tadi"
+const convDeleteMatch = text.match(
+  /^(?:tolong\s+)?(batalin|batalkan|hapus|delete|cancel)\s+(?:(catatan|transaksi)\s+)?(.+?)(?:\s+(tadi|barusan))?(?:\s+dong|\s+ya|\s+deh|\s+aja|\s+plis)?$/i
+);
+if (convDeleteMatch) {
+  const verb = convDeleteMatch[1].toLowerCase();
+  const hasTxWord = Boolean(convDeleteMatch[2]);
+  const rawTarget = convDeleteMatch[3].trim();
+  const hasTimeWord = Boolean(convDeleteMatch[4]);
+
+  const isTargetedTx = verb.startsWith('batal') || hasTxWord || hasTimeWord;
+  if (isTargetedTx && !/^(?:semua|budget|aturan|tagihan|hutang|piutang|kas|data)\b/i.test(rawTarget)) {
+    const targetAmount = parseNominal(rawTarget);
+    return {
+      isCommand: true,
+      action: 'conversational_edit',
+      subAction: 'delete',
+      targetKeyword: targetAmount ? null : cleanTargetKeyword(rawTarget),
+      targetAmount: targetAmount || null,
+    };
+  }
+}
+
+return null;
+}
+
+// --- Edit Transaksi (Quick Edit Terakhir & Targeted Edit Berdasarkan Kata Kunci / Bulan) ---
+
 /**
  * Parse pesan WhatsApp
  */
@@ -908,7 +1080,11 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'confirm_reset_all_data' };
   }
 
-  // --- Edit Transaksi (Quick Edit Terakhir & Targeted Edit Berdasarkan Kata Kunci / Bulan) ---
+  // Ralat Percakapan Alami (Conversational Edit / Patch)
+  const convEdit = parseConversationalEdit(text);
+  if (convEdit) {
+    return convEdit;
+  }
 
   // 1. Targeted Edit Kategori Berdasarkan Kata Kunci / Bulan
   // Pola A: "Belanja bulanan galon oktober ubah kategori ke makanan dan minuman" / "galon ubah kategori ke makanan"
@@ -1141,5 +1317,6 @@ module.exports = {
   CATEGORY_KEYWORDS,
   isConversationalText,
   parsePocketShift,
+  parseConversationalEdit,
 };
 

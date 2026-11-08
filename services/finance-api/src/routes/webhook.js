@@ -879,11 +879,12 @@ router.post('/webhook', async (req, res) => {
 • \`+gaji 4.1jt\`
 • \`+pemasukan 500rb booster\`
 
-*3. Edit & Pembatalan Transaksi:*
-• \`ubah nominal 120rb\` (ganti nominal transaksi terakhir)
-• \`ubah kategori bensin\` (ganti kategori transaksi terakhir)
-• \`ubah catatan makan siang\` (ganti keterangan transaksi)
-• \`galon ubah kategori ke makanan dan minuman\` (edit transaksi lama spesifik)
+*3. Edit & Ralat Percakapan Alami:*
+• \`eh sate tadi maksudnya 35rb bukan 45rb\` (ralat nominal percakapan)
+• \`pindahin kopi tadi ke kantong nongkrong\` (pindah kategori/pos)
+• \`yang 5rb tadi bukan es teh tapi parkir\` (ralat barang & kategori otomatis)
+• \`batalin sate tadi\` (batalkan catatan transaksi spesifik)
+• \`ubah nominal 120rb\` / \`ubah kategori bensin\`
 • \`batal\` (membatalkan transaksi terakhir)
 
 *4. Pindah Dana & Alokasi Rekening:*
@@ -1045,6 +1046,139 @@ router.post('/webhook', async (req, res) => {
 
         return await sendWhatsAppMessage(from, reply);
       }
+
+      // 2g-1. CONVERSATIONAL EDIT (RALAT PERCAKAPAN ALAMI)
+      // Contoh: "eh sate tadi maksudnya 35rb bukan 45rb ya", "pindahin kopi tadi ke kantong nongkrong dong",
+      // "yang 5rb tadi bukan es teh, tapi parkir", "batalin sate tadi"
+      if (parsed.action === 'conversational_edit') {
+        const { subAction, targetKeyword, targetAmount, newAmount, categoryInput, newDescription } = parsed;
+
+        // Ambil transaksi terbaru pengguna (15 transaksi terakhir)
+        const recentTxs = await prisma.transaction.findMany({
+          where: { userNumber },
+          orderBy: { createdAt: 'desc' },
+          take: 15,
+        });
+
+        if (!recentTxs || recentTxs.length === 0) {
+          return await sendWhatsAppMessage(from, 'ℹ️ Belum ada transaksi yang tercatat untuk diralat.');
+        }
+
+        let targetTx = null;
+
+        // Prioritas 1: Pencocokan berdasarkan nominal spesifik (misal: "yang 5rb tadi")
+        if (targetAmount) {
+          targetTx = recentTxs.find((tx) => Math.abs(tx.amount - targetAmount) < 1);
+        }
+
+        // Prioritas 2: Pencocokan kata kunci barang / merchant / kategori
+        if (!targetTx && targetKeyword) {
+          const kw = targetKeyword.toLowerCase();
+          targetTx = recentTxs.find((tx) => tx.description.toLowerCase().includes(kw));
+          if (!targetTx) {
+            targetTx = recentTxs.find((tx) => (tx.merchantName || '').toLowerCase().includes(kw));
+          }
+          if (!targetTx) {
+            targetTx = recentTxs.find((tx) => tx.category.toLowerCase().includes(kw));
+          }
+        }
+
+        // Prioritas 3: Transaksi paling terakhir
+        if (!targetTx) {
+          targetTx = recentTxs[0];
+        }
+
+        // 1. Aksi Hapus / Pembatalan Tertarget
+        if (subAction === 'delete') {
+          await prisma.transaction.delete({
+            where: { id: targetTx.id },
+          });
+
+          let budgetInfo = '';
+          if (targetTx.type === 'expense') {
+            try {
+              const status = await checkBudgetStatus(userNumber, targetTx.category);
+              if (status && status.hasBudget) {
+                budgetInfo = `\n\n💡 *Sisa Kuota ${targetTx.category}:* ${formatRupiah(status.remaining)} (Terpakai siklus ini: ${formatRupiah(status.totalSpent)})`;
+              }
+            } catch (err) {
+              console.error('[conversational_edit:delete] Gagal hitung budget:', err.message);
+            }
+          }
+
+          const cancelReply =
+            `🗑️ *Transaksi Berhasil Dibatalkan!*\n\n` +
+            `• 📦 Barang/Keterangan: *${targetTx.description}*\n` +
+            `• 🏷️ Kategori: *${targetTx.category}*\n` +
+            `• 💰 Nominal: *${formatRupiah(targetTx.amount)}*\n` +
+            `• 📅 Waktu: *${dayjs(targetTx.createdAt).format('DD/MM/YYYY HH:mm')}*` +
+            budgetInfo +
+            `\n\n_Catatan telah dihapus dari pembukuan._`;
+
+          return await sendWhatsAppMessage(from, cancelReply);
+        }
+
+        // 2. Aksi Update (Nominal, Kategori, atau Deskripsi)
+        let updateData = {};
+        let changeTitle = 'Transaksi Berhasil Diralat!';
+        let changeBullet = '';
+
+        if (subAction === 'edit_amount') {
+          const oldAmt = targetTx.amount;
+          updateData.amount = newAmount;
+          const diff = newAmount - oldAmt;
+          const diffStr = diff > 0 ? `+${formatRupiah(diff)}` : `-${formatRupiah(Math.abs(diff))}`;
+          changeBullet = `💰 Nominal: *${formatRupiah(oldAmt)}* ➔ *${formatRupiah(newAmount)}* (${diffStr})`;
+        } else if (subAction === 'edit_category') {
+          const oldCat = targetTx.category;
+          const targetCategory = matchCategory(categoryInput) || categoryInput;
+          updateData.category = targetCategory;
+          changeBullet = `🏷️ Kategori: *${oldCat}* ➔ *${targetCategory}*`;
+        } else if (subAction === 'edit_description') {
+          const oldDesc = targetTx.description;
+          updateData.description = newDescription;
+          changeBullet = `📦 Keterangan: *${oldDesc}* ➔ *${newDescription}*`;
+          const autoCat = detectCategory(newDescription, targetTx.type, targetTx.amount) || matchCategory(newDescription);
+          if (autoCat && autoCat !== targetTx.category) {
+            updateData.category = autoCat;
+            changeBullet += `\n• 🏷️ Kategori otomatis dialihkan ke: *${autoCat}*`;
+          }
+        }
+
+        const updatedTx = await prisma.transaction.update({
+          where: { id: targetTx.id },
+          data: updateData,
+        });
+
+        // Hitung status jatah hari ini & budget terbaru
+        let budgetContext = '';
+        if (updatedTx.type === 'expense') {
+          try {
+            const todayStatus = await checkBudgetStatus(userNumber, updatedTx.category);
+            if (todayStatus && todayStatus.hasBudget) {
+              if (todayStatus.isTodayOver) {
+                budgetContext = `\n\n⚠️ *Batas Hari Ini (${updatedTx.category}):* Terpakai ${formatRupiah(todayStatus.todaySpent)} / Jatah ${formatRupiah(todayStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(todayStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(todayStatus.nextDayAllowance)}/hari)`;
+              } else {
+                budgetContext = `\n\n💡 *Batas Hari Ini (${updatedTx.category}):* Jatah ${formatRupiah(todayStatus.todayDailyLimit)} | Keluar ${formatRupiah(todayStatus.todaySpent)} | Sisa ${formatRupiah(todayStatus.todayDailyRemaining)}`;
+              }
+            }
+          } catch (err) {
+            console.error('[conversational_edit] Gagal hitung status budget:', err.message);
+          }
+        }
+
+        const replyMsg =
+          `✏️ *${changeTitle}*\n\n` +
+          `• ${changeBullet}\n` +
+          `• 📦 Barang/Keterangan: ${updatedTx.description}\n` +
+          `• 🏷️ Kategori: ${updatedTx.category}\n` +
+          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}` +
+          budgetContext +
+          `\n\n_Catatan sudah diperbarui otomatis._`;
+
+        return await sendWhatsAppMessage(from, replyMsg);
+      }
+
 
       // 2g-2. QUICK EDIT TRANSAKSI TERAKHIR
       if (parsed.action === 'edit_last_tx') {

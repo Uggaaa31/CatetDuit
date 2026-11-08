@@ -145,6 +145,52 @@ it('perintah budget dan jatah hari ini dikenali', () => {
   assert.ok(parseMessage('makan 25rb hari ini').isTransaction, 'transaksi dengan nominal tetap transaksi');
 });
 
+it('ralat percakapan alami (conversational edit) dikenali dengan tepat', () => {
+  // Ralat nominal compare
+  const r1 = parseMessage('eh sate tadi maksudnya 35rb bukan 45rb ya');
+  assert.strictEqual(r1.action, 'conversational_edit');
+  assert.strictEqual(r1.subAction, 'edit_amount');
+  assert.strictEqual(r1.targetKeyword, 'sate');
+  assert.strictEqual(r1.newAmount, 35000);
+  assert.strictEqual(r1.oldAmount, 45000);
+
+  // Ralat nominal direct
+  const r2 = parseMessage('salah tadi maksudnya 35rb');
+  assert.strictEqual(r2.action, 'conversational_edit');
+  assert.strictEqual(r2.subAction, 'edit_amount');
+  assert.strictEqual(r2.newAmount, 35000);
+
+  // Ralat kategori / pindah pos kantong
+  const r3 = parseMessage('pindahin kopi tadi ke kantong nongkrong dong');
+  assert.strictEqual(r3.action, 'conversational_edit');
+  assert.strictEqual(r3.subAction, 'edit_category');
+  assert.strictEqual(r3.targetKeyword, 'kopi');
+  assert.strictEqual(r3.categoryInput, 'nongkrong');
+
+  // Masukin ke kantong
+  const r4 = parseMessage('masukin ke kantong nongkrong dong');
+  assert.strictEqual(r4.action, 'conversational_edit');
+  assert.strictEqual(r4.subAction, 'edit_category');
+  assert.strictEqual(r4.categoryInput, 'nongkrong');
+
+  // Ralat keterangan & deteksi nominal target
+  const r5 = parseMessage('yang 5rb tadi bukan es teh, tapi parkir');
+  assert.strictEqual(r5.action, 'conversational_edit');
+  assert.strictEqual(r5.subAction, 'edit_description');
+  assert.strictEqual(r5.targetAmount, 5000);
+  assert.strictEqual(r5.newDescription, 'parkir');
+
+  // Pembatalan transaksi tertarget
+  const r6 = parseMessage('batalin sate tadi');
+  assert.strictEqual(r6.action, 'conversational_edit');
+  assert.strictEqual(r6.subAction, 'delete');
+  assert.strictEqual(r6.targetKeyword, 'sate');
+
+  // Transaksi belanja normal tidak keliru dibaca ralat
+  assert.ok(parseMessage('makan sate 45rb').isTransaction);
+  assert.ok(parseMessage('tadi beli bensin 30rb').isTransaction);
+});
+
 // --- runner ---
 let failed = 0;
 for (const c of cases) {
