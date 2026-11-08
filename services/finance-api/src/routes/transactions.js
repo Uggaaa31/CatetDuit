@@ -68,13 +68,15 @@ router.post('/', async (req, res) => {
       const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
       if (budgetStatus.hasBudget) {
         if (budgetStatus.isOverbudget) {
-          budgetAlert = `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})\n`;
+          budgetAlert = `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})\n`;
+        } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
+          if (budgetStatus.isTodayOver) {
+            budgetAlert = `\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(budgetStatus.nextDayAllowance)}/hari)\n`;
+          } else {
+            budgetAlert = `\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)} (Sisa siklus: ${formatRupiah(budgetStatus.remaining)})\n`;
+          }
         } else if (budgetStatus.isWarning) {
           budgetAlert = `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})\n`;
-        } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-          budgetAlert = `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)\n`;
-        } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-          budgetAlert = `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}\n`;
         }
       }
     }

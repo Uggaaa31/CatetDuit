@@ -8,6 +8,7 @@ const { generateFinancialExcel } = require('../services/excelService');
 const {
   checkBudgetStatus,
   generateBudgetReport,
+  generateTodayBudgetReport,
   updateCategoryBudget,
   syncDefaultBudgets,
   transferPocketBudget,
@@ -380,13 +381,17 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
       if (budgetStatus.hasBudget) {
         if (budgetStatus.isOverbudget) {
-          reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+          reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+        } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
+          if (budgetStatus.isTodayOver) {
+            reply += `\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(budgetStatus.nextDayAllowance)}/hari)`;
+          } else {
+            reply += `\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}\n   _(Sisa kuota siklus: ${formatRupiah(budgetStatus.remaining)}, sisa ${budgetStatus.daysRemaining} hari lagi)_`;
+          }
         } else if (budgetStatus.isWarning) {
           reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
-        } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-          reply += `\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
-        } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-          reply += `\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
+        } else {
+          reply += `\n📊 *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
         }
       }
     }
@@ -450,13 +455,15 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
     const budgetStatus = await checkBudgetStatus(userNumber, cat);
     if (budgetStatus.hasBudget) {
       if (budgetStatus.isOverbudget) {
-        budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+        budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas siklus! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+      } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
+        if (budgetStatus.isTodayOver) {
+          budgetAlerts.push(`⚠️ *Batas Hari Ini (${cat}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))})`);
+        } else {
+          budgetAlerts.push(`💡 *Batas Hari Ini (${cat}):* Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)} (Keluar ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)})`);
+        }
       } else if (budgetStatus.isWarning) {
-        budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
-      } else if (cat === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-        budgetAlerts.push(`💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari)`);
-      } else if (cat === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-        budgetAlerts.push(`🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)}`);
+        budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% siklus (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
       }
     }
   }
@@ -792,13 +799,15 @@ router.post('/webhook', async (req, res) => {
           const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
           if (budgetStatus.hasBudget) {
             if (budgetStatus.isOverbudget) {
-              budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+              budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+            } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
+              if (budgetStatus.isTodayOver) {
+                budgetAlert = `\n\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini)`;
+              } else {
+                budgetAlert = `\n\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}`;
+              }
             } else if (budgetStatus.isWarning) {
               budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
-            } else if (tx.category === 'Makanan & Minuman' && budgetStatus.remaining > 0) {
-              budgetAlert = `\n\n💡 *Sisa kuota makanan:* ${formatRupiah(budgetStatus.remaining)} (Jatah aman: ${formatRupiah(budgetStatus.dailyAllowance)}/hari, sisa ${budgetStatus.daysRemaining} hari lagi)`;
-            } else if (tx.category === 'Rokok & Vape' && budgetStatus.remaining > 0) {
-              budgetAlert = `\n\n🚬 *Sisa kuota rokok & vape:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
             }
           }
         }
@@ -902,6 +911,8 @@ router.post('/webhook', async (req, res) => {
 *8. Cek Alokasi Gaji & Anggaran:*
 • \`alokasi\` (panduan alokasi gajian Tgl 21 & Tgl 1)
 • \`budget\` (cek kuota & sisa hari dalam siklus gajian)
+• \`budget hari ini\` / \`sisa hari ini\` (cek batas & sisa belanja hari ini)
+• \`jatah makan hari ini\` (cek jatah kategori tertentu hari ini)
 • \`set budget bensin 250rb\` (ubah limit anggaran)
 • \`reset budget\` (kembalikan ke default Rp 4.600.000)
 
@@ -927,6 +938,12 @@ router.post('/webhook', async (req, res) => {
       // 2b. STATUS BUDGET SIKLUS GAJIAN
       if (parsed.action === 'budget') {
         const report = await generateBudgetReport(userNumber);
+        return await sendWhatsAppMessage(from, report);
+      }
+
+      // 2b-1. STATUS BUDGET HARI INI
+      if (parsed.action === 'today_budget') {
+        const report = await generateTodayBudgetReport(userNumber, parsed.categoryInput);
         return await sendWhatsAppMessage(from, report);
       }
 

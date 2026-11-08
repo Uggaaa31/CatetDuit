@@ -15,6 +15,14 @@ const DEFAULT_BUDGETS = {
   'Kirim Keluarga': 400000,
 };
 
+const DAILY_CATEGORIES = new Set([
+  'Makanan & Minuman',
+  'Rokok & Vape',
+  'Bensin & Transportasi',
+  'Nongkrong & Hiburan',
+  'Belanja Bulanan',
+]);
+
 function formatRupiah(number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -109,7 +117,7 @@ async function syncDefaultBudgets(userNumber) {
   }
 }
 
-async function checkBudgetStatus(userNumber, category) {
+async function checkBudgetStatus(userNumber, category, targetDate = new Date()) {
   await ensureDefaultBudgets(userNumber);
 
   const budget = await prisma.budget.findUnique({
@@ -125,7 +133,10 @@ async function checkBudgetStatus(userNumber, category) {
     return { hasBudget: false };
   }
 
-  const cycle = getPayCycleRange();
+  const cycle = getPayCycleRange(targetDate);
+  const d = dayjs(targetDate);
+  const startOfDay = d.startOf('day').toDate();
+  const endOfDay = d.endOf('day').toDate();
 
   const transactions = await prisma.transaction.findMany({
     where: {
@@ -141,6 +152,30 @@ async function checkBudgetStatus(userNumber, category) {
   const remaining = budget.monthlyLimit - totalSpent;
   const dailyAllowance = remaining > 0 ? Math.round(remaining / cycle.daysRemaining) : 0;
 
+  // Pemakaian khusus hari ini
+  const todayTransactions = transactions.filter(
+    (t) => t.createdAt >= startOfDay && t.createdAt <= endOfDay
+  );
+  const todaySpent = todayTransactions.reduce((acc, t) => acc + t.amount, 0);
+
+  // Sisa kuota pada awal hari (sebelum belanja hari ini)
+  const spentBeforeToday = transactions
+    .filter((t) => t.createdAt < startOfDay)
+    .reduce((acc, t) => acc + t.amount, 0);
+  const remainingAtStartOfDay = budget.monthlyLimit - spentBeforeToday;
+
+  // Jatah hari ini didasarkan pada sisa awal hari dibagi sisa hari siklus
+  const todayDailyLimit =
+    remainingAtStartOfDay > 0 ? Math.round(remainingAtStartOfDay / cycle.daysRemaining) : 0;
+
+  // Sisa jatah khusus hari ini (setelah dipotong belanja hari ini)
+  const todayDailyRemaining = todayDailyLimit - todaySpent;
+  const isTodayOver = todayDailyRemaining < 0;
+
+  // Proyeksi jatah harian mulai besok
+  const daysAfterToday = Math.max(1, cycle.daysRemaining - 1);
+  const nextDayAllowance = remaining > 0 ? Math.round(remaining / daysAfterToday) : 0;
+
   return {
     hasBudget: true,
     category,
@@ -150,6 +185,12 @@ async function checkBudgetStatus(userNumber, category) {
     percentage,
     daysRemaining: cycle.daysRemaining,
     dailyAllowance,
+    todayDailyLimit,
+    todaySpent,
+    todayDailyRemaining,
+    isTodayOver,
+    nextDayAllowance,
+    isDailyCategory: DAILY_CATEGORIES.has(category),
     cycleLabel: cycle.label,
     isWarning: percentage >= 80 && percentage < 100,
     isOverbudget: percentage >= 100,
@@ -228,6 +269,147 @@ async function generateBudgetReport(userNumber) {
     `_Tips: Ketik \`alokasi\` untuk panduan pembagian gaji tgl 21 & 1, atau \`set budget [kategori] [nominal]\`._`;
 
   return message;
+}
+
+async function generateTodayBudgetReport(userNumber, targetCategory = null) {
+  await ensureDefaultBudgets(userNumber);
+
+  const cycle = getPayCycleRange();
+  const d = dayjs();
+  const startOfDay = d.startOf('day').toDate();
+  const endOfDay = d.endOf('day').toDate();
+
+  const budgets = await prisma.budget.findMany({
+    where: { userNumber },
+    orderBy: { monthlyLimit: 'desc' },
+  });
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      userNumber,
+      type: 'expense',
+      createdAt: { gte: cycle.start, lte: cycle.end },
+    },
+  });
+
+  const resolvedCategory = targetCategory ? matchCategory(targetCategory) || targetCategory : null;
+
+  if (resolvedCategory) {
+    const b = budgets.find((item) => item.category.toLowerCase() === resolvedCategory.toLowerCase());
+    if (!b) {
+      return `❌ Kategori *${resolvedCategory}* tidak ditemukan dalam daftar anggaran Anda.\nKetik \`budget\` untuk melihat daftar kategori aktif.`;
+    }
+
+    const catTxs = transactions.filter((t) => t.category === b.category);
+    const totalSpent = catTxs.reduce((acc, t) => acc + t.amount, 0);
+    const spentToday = catTxs
+      .filter((t) => t.createdAt >= startOfDay && t.createdAt <= endOfDay)
+      .reduce((acc, t) => acc + t.amount, 0);
+    const spentBeforeToday = catTxs
+      .filter((t) => t.createdAt < startOfDay)
+      .reduce((acc, t) => acc + t.amount, 0);
+
+    const remainingAtStart = b.monthlyLimit - spentBeforeToday;
+    const todayLimit = remainingAtStart > 0 ? Math.round(remainingAtStart / cycle.daysRemaining) : 0;
+    const todayRemaining = todayLimit - spentToday;
+    const remainingCycle = b.monthlyLimit - totalSpent;
+    const daysAfterToday = Math.max(1, cycle.daysRemaining - 1);
+    const nextDayDaily = remainingCycle > 0 ? Math.round(remainingCycle / daysAfterToday) : 0;
+
+    let statusEmoji = '🟢';
+    let statusText = 'Masih dalam batas aman';
+    if (todayRemaining < 0) {
+      statusEmoji = '🚨';
+      statusText = `Over ${formatRupiah(Math.abs(todayRemaining))} hari ini!`;
+    } else if (todayRemaining === 0 && todayLimit > 0) {
+      statusEmoji = '⚠️';
+      statusText = 'Jatah hari ini pas habis';
+    }
+
+    return (
+      `🎯 *STATUS JATAH HARI INI: ${b.category.toUpperCase()}*\n` +
+      `🗓️ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
+      `⏳ *Sisa Siklus:* ${cycle.daysRemaining} hari menuju gajian (${cycle.label})\n\n` +
+      `🎯 *Batas Hari Ini:* ${formatRupiah(todayLimit)}\n` +
+      `💸 *Terpakai Hari Ini:* ${formatRupiah(spentToday)}\n` +
+      `${statusEmoji} *Sisa Hari Ini:* ${todayRemaining >= 0 ? formatRupiah(todayRemaining) : '-' + formatRupiah(Math.abs(todayRemaining)) + ' (Over)'}\n` +
+      `📌 *Status:* ${statusText}\n\n` +
+      `═══════════════════════\n` +
+      `📊 *Sisa Kuota Siklus:* ${formatRupiah(remainingCycle)} dari ${formatRupiah(b.monthlyLimit)}\n` +
+      `💡 *Jatah Harian Besok:* ${formatRupiah(nextDayDaily)}/hari\n\n` +
+      `_Tips: Setiap belanja baru otomatis memotong sisa hari ini._`
+    );
+  }
+
+  const dailyCategories = [
+    'Makanan & Minuman',
+    'Rokok & Vape',
+    'Bensin & Transportasi',
+    'Nongkrong & Hiburan',
+    'Belanja Bulanan',
+  ];
+
+  const todayOtherCats = transactions
+    .filter((t) => t.createdAt >= startOfDay && t.createdAt <= endOfDay && !dailyCategories.includes(t.category))
+    .map((t) => t.category);
+  const targetCategoryList = [...new Set([...dailyCategories, ...todayOtherCats])];
+
+  let totalTodayLimit = 0;
+  let totalTodaySpent = 0;
+  let itemsReport = [];
+
+  for (const catName of targetCategoryList) {
+    const b = budgets.find((item) => item.category === catName);
+    if (!b) continue;
+
+    const catTxs = transactions.filter((t) => t.category === catName);
+    const totalSpent = catTxs.reduce((acc, t) => acc + t.amount, 0);
+    const spentToday = catTxs
+      .filter((t) => t.createdAt >= startOfDay && t.createdAt <= endOfDay)
+      .reduce((acc, t) => acc + t.amount, 0);
+    const spentBeforeToday = catTxs
+      .filter((t) => t.createdAt < startOfDay)
+      .reduce((acc, t) => acc + t.amount, 0);
+
+    const remainingAtStart = b.monthlyLimit - spentBeforeToday;
+    const todayLimit = remainingAtStart > 0 ? Math.round(remainingAtStart / cycle.daysRemaining) : 0;
+    const todayRemaining = todayLimit - spentToday;
+    const remainingCycle = b.monthlyLimit - totalSpent;
+
+    totalTodayLimit += todayLimit;
+    totalTodaySpent += spentToday;
+
+    let emoji = '🟢';
+    if (todayRemaining < 0) emoji = '🚨';
+    else if (todayRemaining === 0 && todayLimit > 0) emoji = '⚠️';
+    else if (spentToday === 0) emoji = '⚪';
+
+    const sisaText = todayRemaining >= 0 ? formatRupiah(todayRemaining) : '-' + formatRupiah(Math.abs(todayRemaining)) + ' (Over)';
+
+    itemsReport.push(
+      `${emoji} *${catName}*\n` +
+      `   Jatah: ${formatRupiah(todayLimit)} | Keluar: ${formatRupiah(spentToday)}\n` +
+      `   └ 💰 *Sisa Hari Ini: ${sisaText}* _(Siklus: ${formatRupiah(remainingCycle)})_`
+    );
+  }
+
+  const totalTodayRemaining = totalTodayLimit - totalTodaySpent;
+  let totalEmoji = '🟢';
+  if (totalTodayRemaining < 0) totalEmoji = '🚨';
+  else if (totalTodayRemaining === 0) totalEmoji = '⚠️';
+
+  return (
+    `🎯 *STATUS JATAH BUDGET HARI INI*\n` +
+    `🗓️ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
+    `⏳ *Sisa Siklus:* ${cycle.daysRemaining} hari menuju gajian (${cycle.label})\n\n` +
+    itemsReport.join('\n\n') +
+    `\n\n═══════════════════════\n` +
+    `📊 *TOTAL HARIAN (KATEGORI RUTIN):*\n` +
+    `🎯 *Batas Hari Ini:* ${formatRupiah(totalTodayLimit)}\n` +
+    `💸 *Total Belanja Hari Ini:* ${formatRupiah(totalTodaySpent)}\n` +
+    `${totalEmoji} *Sisa Jatah Hari Ini:* ${totalTodayRemaining >= 0 ? formatRupiah(totalTodayRemaining) : '-' + formatRupiah(Math.abs(totalTodayRemaining)) + ' (Over)'}\n\n` +
+    `_Tips: Belanja baru otomatis mengurangi jatah hari ini. Ketik \`budget\` untuk rekap bulanan atau \`jatah makan hari ini\` untuk kategori tertentu._`
+  );
 }
 
 async function updateCategoryBudget(userNumber, categoryName, newLimit) {
@@ -460,10 +642,12 @@ function getDualCycleGuide() {
 
 module.exports = {
   DEFAULT_BUDGETS,
+  DAILY_CATEGORIES,
   ensureDefaultBudgets,
   syncDefaultBudgets,
   checkBudgetStatus,
   generateBudgetReport,
+  generateTodayBudgetReport,
   updateCategoryBudget,
   matchCategory,
   transferPocketBudget,

@@ -79,6 +79,11 @@ async function buildFacts(userNumber) {
   const jatahHarianMakanan =
     foodRow && foodRow.sisa > 0 ? Math.round(foodRow.sisa / Math.max(1, cycle.daysRemaining)) : 0;
 
+  const todayFoodSpent = todayTxs
+    .filter((tx) => tx.type === 'expense' && tx.category === 'Makanan & Minuman')
+    .reduce((acc, tx) => acc + tx.amount, 0);
+  const sisaJatahHariIniMakanan = Math.round(jatahHarianMakanan - todayFoodSpent);
+
   return {
     periode_siklus: cycle.label,
     sisa_hari_ke_gajian: cycle.daysRemaining,
@@ -91,6 +96,8 @@ async function buildFacts(userNumber) {
     jumlah_transaksi_hari_ini: todayTxs.length,
     kategori_terboros: top ? { kategori: top.kategori, nominal: top.terpakai } : null,
     jatah_harian_makanan: jatahHarianMakanan,
+    pengeluaran_makanan_hari_ini: rupiahRound(todayFoodSpent),
+    sisa_jatah_makanan_hari_ini: rupiahRound(sisaJatahHariIniMakanan),
     rincian_kategori: perCategory,
     catatan: 'Semua angka dalam rupiah dan sudah final dari database. Jangan menghitung ulang.',
   };

@@ -802,6 +802,32 @@ function parseMessage(rawText) {
     return { isCommand: true, action: 'help' };
   }
 
+  if (
+    lower === 'budget hari ini' ||
+    lower === 'cek budget hari ini' ||
+    lower === 'sisa hari ini' ||
+    lower === 'cek sisa hari ini' ||
+    lower === 'jatah hari ini' ||
+    lower === 'cek jatah hari ini' ||
+    lower === 'kuota hari ini' ||
+    lower === 'anggaran hari ini' ||
+    lower === 'sisa budget hari ini' ||
+    lower === 'sisa jatah hari ini'
+  ) {
+    return { isCommand: true, action: 'today_budget' };
+  }
+
+  // Pola spesifik kategori: "jatah makan hari ini", "sisa rokok hari ini", "budget ngopi hari ini"
+  if (countNominals(text) === 0) {
+    const todayCatMatch =
+      text.match(/^(?:cek\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+(.+?)\s+hari\s+ini$/i) ||
+      text.match(/^(?:cek\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+hari\s+ini\s+(.+)$/i);
+    if (todayCatMatch) {
+      const candidateCat = todayCatMatch[1].trim();
+      return { isCommand: true, action: 'today_budget', categoryInput: candidateCat };
+    }
+  }
+
   if (lower === 'budget' || lower === 'cek budget' || lower === 'anggaran') {
     return { isCommand: true, action: 'budget' };
   }

@@ -132,6 +132,19 @@ it('pesan transaksi tidak salah dibaca sebagai aturan', () => {
   assert.ok(parseMessage('bakso 25rb').isTransaction, 'harus tetap transaksi');
 });
 
+it('perintah budget dan jatah hari ini dikenali', () => {
+  assert.strictEqual(parseMessage('budget hari ini').action, 'today_budget');
+  assert.strictEqual(parseMessage('sisa hari ini').action, 'today_budget');
+  assert.strictEqual(parseMessage('jatah hari ini').action, 'today_budget');
+  const cat1 = parseMessage('jatah makan hari ini');
+  assert.strictEqual(cat1.action, 'today_budget');
+  assert.strictEqual(cat1.categoryInput, 'makan');
+  const cat2 = parseMessage('sisa rokok hari ini');
+  assert.strictEqual(cat2.action, 'today_budget');
+  assert.strictEqual(cat2.categoryInput, 'rokok');
+  assert.ok(parseMessage('makan 25rb hari ini').isTransaction, 'transaksi dengan nominal tetap transaksi');
+});
+
 // --- runner ---
 let failed = 0;
 for (const c of cases) {
