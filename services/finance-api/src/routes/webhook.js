@@ -74,7 +74,7 @@ function refCode(id) {
 }
 
 function refTag(id) {
-  return `🔖 ${refCode(id)}`;
+  return `⚑ ${refCode(id)}`;
 }
 
 function extractRefCode(text) {
@@ -282,7 +282,7 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
       .join('\n');
     return await sendWhatsAppMessage(
       from,
-      `⚠️ Kantong penambal *${donorInput}* tidak dikenali.\n\n` +
+      `⚠ Kantong penambal *${donorInput}* tidak dikenali.\n\n` +
         `Kantong yang tersedia:\n${catList}\n\n` +
         `_Contoh: *beli kuota 100rb, lebihnya ambil dari makanan*_`
     );
@@ -291,7 +291,7 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
   if (donorCategory === itemCategory) {
     return await sendWhatsAppMessage(
       from,
-      `⚠️ Kantong utama dan kantong penambal sama (${itemCategory}).\n` +
+      `⚠ Kantong utama dan kantong penambal sama (${itemCategory}).\n` +
         `_Sebutkan kantong lain, misal: lebihnya ambil dari tabungan._`
     );
   }
@@ -327,11 +327,11 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
   if (donorAvailable < shortfall) {
     return await sendWhatsAppMessage(
       from,
-      `🚫 *Subsidi Silang Tidak Cukup!*\n\n` +
-        `• 💰 Total belanja *${description}*: ${formatRupiah(amount)}\n` +
-        `• 🏷️ Sisa kuota *${itemCategory}*: ${formatRupiah(itemAvailable)}\n` +
+      `⛔ *Subsidi Silang Tidak Cukup!*\n\n` +
+        `• ▣ Total belanja *${description}*: ${formatRupiah(amount)}\n` +
+        `• ◆ Sisa kuota *${itemCategory}*: ${formatRupiah(itemAvailable)}\n` +
         `• ❗ Kekurangan yang perlu ditambal: *${formatRupiah(shortfall)}*\n` +
-        `• 🏦 Sisa kuota *${donorCategory}*: ${formatRupiah(donorAvailable)}\n\n` +
+        `• ⌂ Sisa kuota *${donorCategory}*: ${formatRupiah(donorAvailable)}\n\n` +
         `_Kantong ${donorCategory} belum cukup menambal. Transaksi dibatalkan agar tidak melebihi total anggaran._`
     );
   }
@@ -371,25 +371,25 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
   const dailyBlock = (status) => {
     if (!status || !status.hasBudget || !(status.isDailyCategory || status.todayDailyLimit > 0)) return '';
     if (status.isTodayOver) {
-      return `   └ Jatah hari ini: Terpakai ${formatRupiah(status.todaySpent)} / ${formatRupiah(status.todayDailyLimit)} (Over ${formatRupiah(Math.abs(status.todayDailyRemaining))}, esok ${formatRupiah(status.nextDayAllowance)})`;
+      return `   └ Jatah harian: keluar ${formatRupiah(status.todaySpent)} dari ${formatRupiah(status.todayDailyLimit)} → lebih ${formatRupiah(Math.abs(status.todayDailyRemaining))} (jatah besok ${formatRupiah(status.nextDayAllowance)})`;
     }
-    return `   └ Jatah hari ini: Sisa ${formatRupiah(status.todayDailyRemaining)} (Keluar ${formatRupiah(status.todaySpent)} / ${formatRupiah(status.todayDailyLimit)})`;
+    return `   └ Jatah harian: sisa ${formatRupiah(status.todayDailyRemaining)} dari ${formatRupiah(status.todayDailyLimit)} (keluar ${formatRupiah(status.todaySpent)})`;
   };
 
   const reply =
-    `💸 *BELANJA DICATAT DENGAN SUBSIDI SILANG KANTONG*\n\n` +
-    `• 📦 Barang/Keterangan: *${description}*\n` +
-    `• 💰 Total Belanja: *${formatRupiah(amount)}*\n\n` +
-    `🏷️ *Rincian Pemotongan:*\n` +
+    `▣ *BELANJA DICATAT DENGAN SUBSIDI SILANG KANTONG*\n\n` +
+    `• ▤ Barang/Keterangan: *${description}*\n` +
+    `• ▣ Total Belanja: *${formatRupiah(amount)}*\n\n` +
+    `◆ *Rincian Pemotongan:*\n` +
     (primaryAmount > 0
-      ? `1. ${itemCategory}: *${formatRupiah(primaryAmount)}* (menghabiskan sisa kuota kantong ini)${primaryTx ? ` · ${refCode(primaryTx.id)}` : ''}\n` +
+      ? `1. ${itemCategory}: *${formatRupiah(primaryAmount)}* (menghabiskan sisa kantong ini)${primaryTx ? ` · ref ${refCode(primaryTx.id)}` : ''}\n` +
         `   └ Sisa kuota sekarang: ${formatRupiah(itemAfter.remaining)}\n` +
         (dailyBlock(itemAfter) ? dailyBlock(itemAfter) + '\n' : '') +
-        `2. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (ditambal dari kantong ini) · ${refCode(subsidyTx.id)}\n`
-      : `1. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (kantong utama kosong, seluruhnya ditambal dari sini) · ${refCode(subsidyTx.id)}\n`) +
+        `2. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (ditambal dari kantong ini) · ref ${refCode(subsidyTx.id)}\n`
+      : `1. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (kantong utama kosong, seluruhnya ditambal dari sini) · ref ${refCode(subsidyTx.id)}\n`) +
     `   └ Sisa kuota sekarang: ${formatRupiah(donorAfter.remaining)}\n` +
     (dailyBlock(donorAfter) ? dailyBlock(donorAfter) + '\n' : '') +
-    `\n✅ Total terpotong: ${formatRupiah(primaryAmount + subsidyAmount)} (cocok dengan total belanja)\n` +
+    `\n✅ Total terpotong: ${formatRupiah(primaryAmount + subsidyAmount)} (sama dengan total belanja)\n` +
     `_Ketik *budget* untuk melihat seluruh status kuota kantong._`;
 
   return await sendWhatsAppMessage(from, reply);
@@ -400,16 +400,16 @@ async function executePocketShiftOperation(userNumber, from, shiftData) {
 
   const result = await transferPocketBudget(userNumber, fromPocket, toPocket, amount);
   if (!result.success) {
-    return await sendWhatsAppMessage(from, `⚠️ Gagal menggeser anggaran: ${result.error}`);
+    return await sendWhatsAppMessage(from, `⚠ Gagal menggeser anggaran: ${result.error}`);
   }
 
   const reply =
-    `🔄 *Pergeseran Anggaran Antar Kantong Berhasil!*\n\n` +
-    `💰 *Nominal Dipindahkan:* ${formatRupiah(result.amount)}\n\n` +
-    `📤 *Kantong Asal:* ${result.fromCategory}\n` +
+    `♻ *Pergeseran Anggaran Antar Kantong Berhasil!*\n\n` +
+    `▣ *Nominal Dipindahkan:* ${formatRupiah(result.amount)}\n\n` +
+    `➖ *Kantong Asal:* ${result.fromCategory}\n` +
     `   └ Limit: ${formatRupiah(result.oldFromLimit)} ➔ *${formatRupiah(result.newFromLimit)}*\n` +
     `   └ Sisa kuota: ${formatRupiah(result.fromRemaining)}\n\n` +
-    `📥 *Kantong Tujuan:* ${result.toCategory}\n` +
+    `➕ *Kantong Tujuan:* ${result.toCategory}\n` +
     `   └ Limit: ${formatRupiah(result.oldToLimit)} ➔ *${formatRupiah(result.newToLimit)}*\n` +
     `   └ Sisa kuota: ${formatRupiah(result.toRemaining)}\n` +
     (result.toCategory === 'Makanan & Minuman' && result.toDailyAllowance > 0
@@ -451,12 +451,12 @@ async function executeTransferOperation(userNumber, from, transferData) {
     });
 
     const reply =
-      `🔄 *Alokasi ke SeaBank Berhasil Dicatat!*\n\n` +
-      `🏦 *Tujuan:* SeaBank (Uang Dingin Berbunga Harian)\n` +
-      `💰 *Total Transfer:* ${formatRupiah(finalAmount)}\n\n` +
-      `📋 *Rincian Alokasi Kantong:*\n` +
-      `• 🛡️ *Dana Darurat:* Rp 500.000 (Terkunci aman di SeaBank)\n` +
-      `• 🔒 *Tabungan & Investasi:* Rp 300.000 (Aset bertumbuh)\n\n` +
+      `♻ *Alokasi ke SeaBank Berhasil Dicatat!*\n\n` +
+      `⌂ *Tujuan:* SeaBank (Uang Dingin Berbunga Harian)\n` +
+      `▣ *Total Transfer:* ${formatRupiah(finalAmount)}\n\n` +
+      `▤ *Rincian Alokasi Kantong:*\n` +
+      `• ◘ *Dana Darurat:* Rp 500.000 (Terkunci aman di SeaBank)\n` +
+      `• ◘ *Tabungan & Investasi:* Rp 300.000 (Aset bertumbuh)\n\n` +
       `✅ Dana berhasil diamankan dari godaan belanja harian!\n` +
       `_Ketik 'budget' untuk melihat status kuota tabungan Anda._`;
 
@@ -466,10 +466,10 @@ async function executeTransferOperation(userNumber, from, transferData) {
   // Kasus B: Pemindahan Saldo Operasional Antar Bank (misal BSI ke Bank Jago)
   if (transferType === 'bank_to_bank' || (toTarget && toTarget.toLowerCase().includes('jago'))) {
     const reply =
-      `🔄 *Pemindahan Saldo Antar Bank Berhasil Dicatat!*\n\n` +
-      `🏦 *Dari Rekening:* ${fromBank || 'BSI'}\n` +
-      `🎯 *Ke Rekening:* ${toTarget || 'Bank Jago'}\n` +
-      `💰 *Nominal:* ${formatRupiah(numAmount)}\n\n` +
+      `♻ *Pemindahan Saldo Antar Bank Berhasil Dicatat!*\n\n` +
+      `⌂ *Dari Rekening:* ${fromBank || 'BSI'}\n` +
+      `◆ *Ke Rekening:* ${toTarget || 'Bank Jago'}\n` +
+      `▣ *Nominal:* ${formatRupiah(numAmount)}\n\n` +
       `✅ Uang operasional siap dialokasikan ke Kantong-Kantong Jago (Makan, Tagihan, Sembako, Ortu, Rokok).\n` +
       `_Catatan: Pemindahan saldo antar bank ini tidak memotong kuota belanja harian._`;
 
@@ -495,15 +495,15 @@ async function executeTransferOperation(userNumber, from, transferData) {
 
     const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
     const budgetNote = budgetStatus.hasBudget
-      ? `\n📊 *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)}`
+      ? `\n▮ *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)}`
       : '';
 
     const reply =
       `✅ *Transfer Berhasil Dicatat!*\n\n` +
-      `👤 *Tujuan:* ${person}\n` +
-      `💰 *Nominal:* ${formatRupiah(tx.amount)}\n` +
-      `🏷️ *Kategori:* ${tx.category}` +
-      `\n🔖 Ref: ${refCode(tx.id)}` +
+      `◇ *Tujuan:* ${person}\n` +
+      `▣ *Nominal:* ${formatRupiah(tx.amount)}\n` +
+      `◆ *Kategori:* ${tx.category}` +
+      `\n⚑ Ref: ${refCode(tx.id)}` +
       budgetNote +
       `\n\n_Kategori diisi otomatis. Kalau keliru, ketik *ubah kategori [nama]*. Ketik *batal* untuk membatalkan._`;
 
@@ -526,15 +526,15 @@ async function executeTransferOperation(userNumber, from, transferData) {
   const budgetStatus = await checkBudgetStatus(userNumber, targetCategory);
   let budgetNote = '';
   if (budgetStatus.hasBudget) {
-    budgetNote = `\n📊 *Status Kantong ${targetCategory}:* Terpakai ${formatRupiah(budgetStatus.totalSpent)} / ${formatRupiah(budgetStatus.monthlyLimit)}`;
+    budgetNote = `\n▮ *Status Kantong ${targetCategory}:* terpakai ${formatRupiah(budgetStatus.totalSpent)} dari ${formatRupiah(budgetStatus.monthlyLimit)}`;
   }
 
   const reply =
     `✅ *Alokasi ke Kantong Berhasil Dicatat!*\n\n` +
-    `🎯 *Tujuan:* ${toTarget || targetCategory}\n` +
-    `💰 *Nominal:* ${formatRupiah(numAmount)}\n` +
-    `🏷️ *Kategori:* ${targetCategory}\n` +
-    `🔖 Ref: ${refCode(pocketTx.id)}\n` +
+    `◆ *Tujuan:* ${toTarget || targetCategory}\n` +
+    `▣ *Nominal:* ${formatRupiah(numAmount)}\n` +
+    `◆ *Kategori:* ${targetCategory}\n` +
+    `⚑ Ref: ${refCode(pocketTx.id)}\n` +
     budgetNote +
     `\n\n_Ketik 'budget' untuk melihat sisa seluruh kuota anggaran._`;
 
@@ -567,42 +567,42 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       data: txData,
     });
 
-    const icon = tx.type === 'income' ? '💰' : '💸';
+    const icon = tx.type === 'income' ? '▣' : '▣';
     const label = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
 
     let reply =
       `✅ *${label} Berhasil Dicatat!*\n\n` +
       `${icon} *Nominal:* ${formatRupiah(tx.amount)}\n` +
-      `🏷️ *Kategori:* ${tx.category}\n` +
-      `📦 *Barang/Catatan:* ${tx.description}\n`;
+      `◆ *Kategori:* ${tx.category}\n` +
+      `▤ *Barang/Catatan:* ${tx.description}\n`;
 
     if (items[0].ruleKeyword) {
-      reply += `⚙️ *Aturan pribadi:* "${items[0].ruleKeyword}" → ${tx.category}\n`;
+      reply += `⚙ *Aturan pribadi:* "${items[0].ruleKeyword}" → ${tx.category}\n`;
     }
 
     if (customDate) {
-      reply += `📅 *Tanggal Transaksi:* ${dayjs(tx.createdAt).format('DD/MM/YYYY')}\n`;
+      reply += `⏰ *Tanggal Transaksi:* ${dayjs(tx.createdAt).format('DD/MM/YYYY')}\n`;
     }
 
     if (tx.merchantName) {
-      reply += `🏪 *Toko/Merchant:* ${tx.merchantName}\n`;
+      reply += `⌂ *Toko/Merchant:* ${tx.merchantName}\n`;
     }
 
     if (tx.type === 'expense') {
       const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
       if (budgetStatus.hasBudget) {
         if (budgetStatus.isOverbudget) {
-          reply += `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+          reply += `\n⚠ *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
         } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
           if (budgetStatus.isTodayOver) {
-            reply += `\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(budgetStatus.nextDayAllowance)}/hari)`;
+            reply += `\n⚠ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)} → lebih ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))}. Jatah besok ${formatRupiah(budgetStatus.nextDayAllowance)}/hari`;
           } else {
-            reply += `\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}\n   _(Sisa kuota siklus: ${formatRupiah(budgetStatus.remaining)}, sisa ${budgetStatus.daysRemaining} hari lagi)_`;
+            reply += `\n▸ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)}, sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}\n   _(Sisa kuota siklus: ${formatRupiah(budgetStatus.remaining)}, sisa ${budgetStatus.daysRemaining} hari lagi)_`;
           }
         } else if (budgetStatus.isWarning) {
-          reply += `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+          reply += `\n⚠ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
         } else {
-          reply += `\n📊 *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
+          reply += `\n▮ *Sisa kuota ${tx.category}:* ${formatRupiah(budgetStatus.remaining)} dari limit ${formatRupiah(budgetStatus.monthlyLimit)}`;
         }
       }
     }
@@ -611,7 +611,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       reply += `\n\n${badgeText}`;
     }
 
-    reply += `\n\n🔖 Ref: ${refCode(tx.id)}\n_Ketik *ubah nominal [angka]*, *ubah kategori [nama]*, atau *batal* jika keliru. Anda juga bisa **membalas pesan ini** untuk meralat transaksi tersebut._`;
+    reply += `\n\n⚑ Ref: ${refCode(tx.id)}\n_Ketik *ubah nominal [angka]*, *ubah kategori [nama]*, atau *batal* jika keliru. Anda juga bisa **membalas pesan ini** untuk meralat transaksi tersebut._`;
     return await sendWhatsAppMessage(from, reply);
   }
 
@@ -646,18 +646,18 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
 
   let itemListText = '';
   createdTxs.forEach((tx, idx) => {
-    const icon = tx.type === 'income' ? '💰' : '💸';
+    const icon = tx.type === 'income' ? '▣' : '▣';
     const merch = tx.merchantName ? ` (@${tx.merchantName})` : '';
-    itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)} · ${refCode(tx.id)}\n`;
+    itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ ◆ ${tx.category} — ${formatRupiah(tx.amount)} · ${refCode(tx.id)}\n`;
   });
 
   let summaryText = '';
   if (totalExpense > 0 && totalIncome > 0) {
-    summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+    summaryText = `▣ *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n▣ *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
   } else if (totalIncome > 0) {
-    summaryText = `💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
+    summaryText = `▣ *Total Pemasukan:* ${formatRupiah(totalIncome)}`;
   } else {
-    summaryText = `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}`;
+    summaryText = `▣ *Total Pengeluaran:* ${formatRupiah(totalExpense)}`;
   }
 
   let budgetAlerts = [];
@@ -666,15 +666,15 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
     const budgetStatus = await checkBudgetStatus(userNumber, cat);
     if (budgetStatus.hasBudget) {
       if (budgetStatus.isOverbudget) {
-        budgetAlerts.push(`🚨 *${cat}* MELEBIHI batas siklus! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+        budgetAlerts.push(`⚠ *${cat}* MELEBIHI batas siklus! (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
       } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
         if (budgetStatus.isTodayOver) {
-          budgetAlerts.push(`⚠️ *Batas Hari Ini (${cat}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))})`);
+          budgetAlerts.push(`⚠ *Batas Hari Ini (${cat}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)} → lebih ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))}`);
         } else {
-          budgetAlerts.push(`💡 *Batas Hari Ini (${cat}):* Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)} (Keluar ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)})`);
+          budgetAlerts.push(`▸ *Batas Hari Ini (${cat}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)}, sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}`);
         }
       } else if (budgetStatus.isWarning) {
-        budgetAlerts.push(`⚠️ *${cat}* sudah ${budgetStatus.percentage}% siklus (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
+        budgetAlerts.push(`⚠ *${cat}* sudah ${budgetStatus.percentage}% siklus (Sisa: ${formatRupiah(budgetStatus.remaining)})`);
       }
     }
   }
@@ -682,7 +682,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
   const appliedRules = items
     .map((item, idx) => (item.ruleKeyword ? `"${item.ruleKeyword}" → ${createdTxs[idx] ? createdTxs[idx].category : item.category}` : null))
     .filter(Boolean);
-  const ruleBlock = appliedRules.length > 0 ? `\n⚙️ *Aturan pribadi dipakai:* ${appliedRules.join(', ')}\n` : '';
+  const ruleBlock = appliedRules.length > 0 ? `\n⚙ *Aturan pribadi dipakai:* ${appliedRules.join(', ')}\n` : '';
 
   const alertBlock = budgetAlerts.length > 0 ? `\n${budgetAlerts.join('\n')}\n` : '';
   const badgeBlock = badgeText ? `\n${badgeText}\n` : '';
@@ -844,7 +844,7 @@ async function runAiBranch(userNumber, from, text, senderName) {
     await notifyAiIssue(
       from,
       userNumber,
-      '⚠️ _Kuota AI sedang habis. Pesan transaksi tetap saya proses dengan mode cepat (tanpa AI), tapi obrolan bebas belum bisa dilayani._'
+      '⚠ _Kuota AI sedang habis. Pesan transaksi tetap saya proses dengan mode cepat (tanpa AI), tapi obrolan bebas belum bisa dilayani._'
     );
     return false;
   }
@@ -853,7 +853,7 @@ async function runAiBranch(userNumber, from, text, senderName) {
     await notifyAiIssue(
       from,
       userNumber,
-      '⚠️ _Asisten AI sedang tidak tersedia. Pesan Anda tetap saya proses dengan mode cepat (tanpa AI)._\n_Cek status: buka /health pada service OCR._'
+      '⚠ _Asisten AI sedang tidak tersedia. Pesan Anda tetap saya proses dengan mode cepat (tanpa AI)._\n_Cek status: buka /health pada service OCR._'
     );
     return false;
   }
@@ -879,7 +879,7 @@ async function runAiBranch(userNumber, from, text, senderName) {
       from,
       freshItems,
       'gemini_chat',
-      '🤖 _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
+      '⚙ _(Dianalisis & dicatat otomatis oleh Gemini AI)_'
     );
     handled = true;
   } else if (aiResult.isFinancial && aiResult.transfer && aiResult.transfer.isTransfer) {
@@ -989,7 +989,7 @@ router.post('/webhook', async (req, res) => {
           const daftar = multi.labels.map((label, i) => `${i + 1}. ${label}`).join('\n');
           await sendWhatsAppMessage(
             from,
-            `🧩 *Terbaca ${multi.clauses.length} aksi dalam satu pesan:*\n${daftar}\n\n_Saya kerjakan satu per satu, mohon tunggu sebentar._`
+            `▥ *Terbaca ${multi.clauses.length} aksi dalam satu pesan:*\n${daftar}\n\n_Saya kerjakan satu per satu, mohon tunggu sebentar._`
           );
 
           for (const clause of multi.clauses) {
@@ -1013,7 +1013,7 @@ router.post('/webhook', async (req, res) => {
               );
             } catch (err) {
               console.error(`[finance-api] Sub-aksi "${clause}" gagal:`, err.message);
-              await sendWhatsAppMessage(from, `⚠️ Gagal mengerjakan "${clause}": ${err.message}`);
+              await sendWhatsAppMessage(from, `⚠ Gagal mengerjakan "${clause}": ${err.message}`);
             }
           }
           return;
@@ -1025,7 +1025,7 @@ router.post('/webhook', async (req, res) => {
     if (hasImage && imageFilePath) {
       await sendWhatsAppMessage(
         from,
-        '🔍 *Sedang membaca bukti pembayaran/struk Anda...*\nMohon tunggu beberapa detik.'
+        '▸ *Sedang membaca bukti pembayaran/struk Anda...*\nMohon tunggu beberapa detik.'
       );
 
       try {
@@ -1046,7 +1046,7 @@ router.post('/webhook', async (req, res) => {
         if (!totalAmount || totalAmount <= 0) {
           return await sendWhatsAppMessage(
             from,
-            '⚠️ Maaf, nominal transaksi tidak terbaca jelas pada gambar. Silakan catat manual, contoh: `transfer 150rb di BCA` atau `indomaret 45rb`'
+            '⚠ Maaf, nominal transaksi tidak terbaca jelas pada gambar. Silakan catat manual, contoh: `transfer 150rb di BCA` atau `indomaret 45rb`'
           );
         }
 
@@ -1061,7 +1061,7 @@ router.post('/webhook', async (req, res) => {
           description = items
             .map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name} (${formatRupiah(i.price)})`)
             .join(', ');
-          itemListText = '\n*📦 Rincian Barang:*';
+          itemListText = '\n*▤ Rincian Barang:*';
           items.forEach((item, idx) => {
             const qtyStr = item.qty > 1 ? ` (${item.qty}x)` : '';
             itemListText += `\n${idx + 1}. ${item.name}${qtyStr} — ${formatRupiah(item.price)}`;
@@ -1088,54 +1088,54 @@ router.post('/webhook', async (req, res) => {
           const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
           if (budgetStatus.hasBudget) {
             if (budgetStatus.isOverbudget) {
-              budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+              budgetAlert = `\n\n⚠ *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
             } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
               if (budgetStatus.isTodayOver) {
-                budgetAlert = `\n\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini)`;
+                budgetAlert = `\n\n⚠ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)} → lebih ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))}`;
               } else {
-                budgetAlert = `\n\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}`;
+                budgetAlert = `\n\n▸ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)}, sisa ${formatRupiah(budgetStatus.todayDailyRemaining)}`;
               }
             } else if (budgetStatus.isWarning) {
-              budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+              budgetAlert = `\n\n⚠ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
             }
           }
         }
 
         let reply = '';
         const tipeLabel = transactionType === 'income' ? 'Pemasukan' : 'Pengeluaran';
-        const iconTipe = transactionType === 'income' ? '💰' : '💸';
+        const iconTipe = transactionType === 'income' ? '▣' : '▣';
 
         if (receiptType === 'm_banking') {
           reply =
-            `📱 *Resi M-Banking / Transfer Berhasil Dicatat!*\n\n` +
-            `🏦 *Bank/Aplikasi:* ${bankName || 'M-Banking'}\n` +
-            `👤 *Tujuan/Penerima:* ${recipientName || merchantName || '-'}\n` +
+            `⌗ *Resi M-Banking / Transfer Berhasil Dicatat!*\n\n` +
+            `⌂ *Bank/Aplikasi:* ${bankName || 'M-Banking'}\n` +
+            `◇ *Tujuan/Penerima:* ${recipientName || merchantName || '-'}\n` +
             `${iconTipe} *Nominal:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
-            `🏷️ *Kategori:* ${tx.category}\n` +
-            (notes ? `📝 *Berita/Keterangan:* ${notes}\n` : '') +
-            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            `◆ *Kategori:* ${tx.category}\n` +
+            (notes ? `✎ *Berita/Keterangan:* ${notes}\n` : '') +
+            `⏰ *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             budgetAlert +
-            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n⚑ Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         } else if (receiptType === 'qris') {
           reply =
-            `📱 *Pembayaran QRIS Berhasil Dicatat!*\n\n` +
-            `🏪 *Merchant/Toko:* ${merchantName || '-'}\n` +
-            (bankName ? `🏦 *Aplikasi:* ${bankName}\n` : '') +
+            `⌗ *Pembayaran QRIS Berhasil Dicatat!*\n\n` +
+            `⌂ *Merchant/Toko:* ${merchantName || '-'}\n` +
+            (bankName ? `⌂ *Aplikasi:* ${bankName}\n` : '') +
             `${iconTipe} *Nominal:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
-            `🏷️ *Kategori:* ${tx.category}\n` +
-            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            `◆ *Kategori:* ${tx.category}\n` +
+            `⏰ *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             budgetAlert +
-            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n⚑ Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         } else {
           reply =
-            `🧾 *Struk Belanja Berhasil Dicatat!*\n\n` +
-            `🏪 *Toko/Merchant:* ${merchantName || '-'}\n` +
+            `▤ *Struk Belanja Berhasil Dicatat!*\n\n` +
+            `⌂ *Toko/Merchant:* ${merchantName || '-'}\n` +
             `${iconTipe} *Total:* ${formatRupiah(tx.amount)} (${tipeLabel})\n` +
-            `🏷️ *Kategori:* ${tx.category}\n` +
-            `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
+            `◆ *Kategori:* ${tx.category}\n` +
+            `⏰ *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             itemListText +
             budgetAlert +
-            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n⚑ Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         }
 
         return await sendWhatsAppMessage(from, reply);
@@ -1143,7 +1143,7 @@ router.post('/webhook', async (req, res) => {
         console.error('Error saat OCR bukti pembayaran:', ocrErr);
         return await sendWhatsAppMessage(
           from,
-          `⚠️ Gagal memproses gambar: ${ocrErr.message || 'Error OCR'}. Anda bisa mencatat manual: ketik misalnya \`transfer 150rb di BCA\``
+          `⚠ Gagal memproses gambar: ${ocrErr.message || 'Error OCR'}. Anda bisa mencatat manual: ketik misalnya \`transfer 150rb di BCA\``
         );
       }
     }
@@ -1157,7 +1157,7 @@ router.post('/webhook', async (req, res) => {
       // 2a. MENU BANTUAN
       if (parsed.action === 'help') {
         const helpMessage =
-          `🤖 *Buku Kas WhatsApp - Panduan Penggunaan*\n\n` +
+          `⚙ *Buku Kas WhatsApp - Panduan Penggunaan*\n\n` +
           `*1. Catat Pengeluaran (Bisa Banyak Sekaligus):*
 • \`makan 25rb, es teh 5rb, parkir 2rb\`
 • \`bensin 50rb sama rokok 35rb di SPBU\`
@@ -1175,8 +1175,8 @@ router.post('/webhook', async (req, res) => {
 • \`batalin sate tadi\` (batalkan catatan transaksi spesifik)
 • \`ubah nominal 120rb\` / \`ubah kategori bensin\`
 • \`batal\` (membatalkan transaksi terakhir)
-\`#a1b2c3 jadi 30rb\` (ralat transaksi memakai kode Ref)
-*Balas (quote) pesan konfirmasi transaksi, lalu tulis* \`salah, 30rb\` *atau* \`batalin ini\`*
+• \`#a1b2c3 jadi 30rb\` (ralat transaksi memakai kode Ref)
+• _Balas pesan konfirmasi transaksi, lalu tulis_ \`salah, 30rb\` _atau_ \`batalin ini\`
 
 *4. Pindah Dana & Alokasi Rekening:*
 • \`pindah 800rb ke seabank\` (otomatis Tabungan & Darurat)
@@ -1257,7 +1257,7 @@ router.post('/webhook', async (req, res) => {
       // 2c-1. PANDUAN PINDAH DANA & ALOKASI REKENING
       if (parsed.action === 'fund_transfer_guide') {
         const guide =
-          `🔄 *Panduan Pemindahan & Alokasi Saldo*\n\n` +
+          `♻ *Panduan Pemindahan & Alokasi Saldo*\n\n` +
           `Untuk mencatat pemindahan uang antar bank atau alokasi ke kantong dompet, Anda cukup ketik:\n` +
           `• \`pindah 800rb ke seabank\` ➔ (Otomatis masuk Tabungan 300k & Darurat 500k)\n` +
           `• \`pindah 3.3jt ke jago\` ➔ (Pindah saldo operasional dari BSI ke Bank Jago)\n` +
@@ -1265,7 +1265,7 @@ router.post('/webhook', async (req, res) => {
           `• \`pindah 500rb ke dana darurat\` ➔ (Kategori Dana Darurat)\n` +
           `• \`pindah 300rb ke tabungan\` ➔ (Kategori Tabungan)\n` +
           `• \`pindah 1.2jt ke uang makan\` ➔ (Kategori Makanan & Minuman)\n\n` +
-          `💡 *Alur Rutin Gajian Tanggal 21-22:*\n` +
+          `▸ *Alur Rutin Gajian Tanggal 21-22:*\n` +
           `1. BSI ➔ SeaBank: Rp 800.000 (Tabungan & Dana Darurat)\n` +
           `2. BSI ➔ Bank Jago: Rp 3.300.000 (Operasional & Kirim Ortu)\n\n` +
           `_Ketik \`alokasi 22\` untuk melihat panduan alokasi perbankan lengkap._`;
@@ -1305,7 +1305,7 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'request_reset_all_data') {
         pendingRestarts.set(userNumber, Date.now());
         const warn =
-          `⚠️ *PERINGATAN: ANDA AKAN MENGHAPUS SELURUH RIWAYAT KEUANGAN!*\n\n` +
+          `⚠ *PERINGATAN: ANDA AKAN MENGHAPUS SELURUH RIWAYAT KEUANGAN!*\n\n` +
           `Perintah ini akan *MENGHAPUS SEMUA CATATAN TRANSAKSI* dan mengembalikan alokasi anggaran ke setelan awal Rp 4.600.000.\n\n` +
           `Ketik *KONFIRMASI RESTART* dalam 60 detik untuk melanjutkan.\n` +
           `_Jika tidak sengaja, abaikan pesan ini atau ketik pesan lain untuk membatalkan._`;
@@ -1320,7 +1320,7 @@ router.post('/webhook', async (req, res) => {
           pendingRestarts.delete(userNumber);
           return await sendWhatsAppMessage(
             from,
-            'ℹ️ Tidak ada permintaan reset aktif atau batas waktu 60 detik telah kedaluwarsa. Data Anda tetap aman.'
+            '▸ Tidak ada permintaan reset aktif atau batas waktu 60 detik telah kedaluwarsa. Data Anda tetap aman.'
           );
         }
 
@@ -1337,10 +1337,10 @@ router.post('/webhook', async (req, res) => {
         await syncDefaultBudgets(userNumber);
 
         const reply =
-          `🔄 *DATA KEUANGAN BERHASIL DI-RESTART!*\n\n` +
-          `• 🗑️ *Total Transaksi Dihapus:* ${count} transaksi\n` +
-          `• 💰 *Saldo Kas Sekarang:* Rp 0\n` +
-          `• 🎯 *Alokasi Anggaran:* Di-reset ke standar Rp 4.600.000\n\n` +
+          `♻ *DATA KEUANGAN BERHASIL DI-RESTART!*\n\n` +
+          `• ✖ *Total Transaksi Dihapus:* ${count} transaksi\n` +
+          `• ▣ *Saldo Kas Sekarang:* Rp 0\n` +
+          `• ◆ *Alokasi Anggaran:* Di-reset ke standar Rp 4.600.000\n\n` +
           `Buku kas Anda sekarang telah bersih dan siap digunakan dari awal.\n` +
           `_Ketik 'budget' untuk cek kuota atau mulai catat pengeluaran baru Anda!_`;
 
@@ -1361,7 +1361,7 @@ router.post('/webhook', async (req, res) => {
         });
 
         if (!recentTxs || recentTxs.length === 0) {
-          return await sendWhatsAppMessage(from, 'ℹ️ Belum ada transaksi yang tercatat untuk diralat.');
+          return await sendWhatsAppMessage(from, '▸ Belum ada transaksi yang tercatat untuk diralat.');
         }
 
         let targetTx = null;
@@ -1407,7 +1407,7 @@ router.post('/webhook', async (req, res) => {
             try {
               const status = await checkBudgetStatus(userNumber, targetTx.category);
               if (status && status.hasBudget) {
-                budgetInfo = `\n\n💡 *Sisa Kuota ${targetTx.category}:* ${formatRupiah(status.remaining)} (Terpakai siklus ini: ${formatRupiah(status.totalSpent)})`;
+                budgetInfo = `\n\n▸ *Sisa Kuota ${targetTx.category}:* ${formatRupiah(status.remaining)} (terpakai siklus ini: ${formatRupiah(status.totalSpent)})`;
               }
             } catch (err) {
               console.error('[conversational_edit:delete] Gagal hitung budget:', err.message);
@@ -1415,12 +1415,12 @@ router.post('/webhook', async (req, res) => {
           }
 
           const cancelReply =
-            `🗑️ *Transaksi Berhasil Dibatalkan!*\n\n` +
-            `• 📦 Barang/Keterangan: *${targetTx.description}*\n` +
-            `• 🏷️ Kategori: *${targetTx.category}*\n` +
-            `• 💰 Nominal: *${formatRupiah(targetTx.amount)}*\n` +
-            `• 📅 Waktu: *${dayjs(targetTx.createdAt).format('DD/MM/YYYY HH:mm')}*\n` +
-            `• 🔖 Ref: ${refCode(targetTx.id)}` +
+            `✖ *Transaksi Berhasil Dibatalkan!*\n\n` +
+            `• ▤ Barang/Keterangan: *${targetTx.description}*\n` +
+            `• ◆ Kategori: *${targetTx.category}*\n` +
+            `• ▣ Nominal: *${formatRupiah(targetTx.amount)}*\n` +
+            `• ⏰ Waktu: *${dayjs(targetTx.createdAt).format('DD/MM/YYYY HH:mm')}*\n` +
+            `• ⚑ Ref: ${refCode(targetTx.id)}` +
             (targetVia ? ` _(dipilih dari ${targetVia})_` : '') +
             budgetInfo +
             `\n\n_Catatan telah dihapus dari pembukuan._`;
@@ -1438,20 +1438,20 @@ router.post('/webhook', async (req, res) => {
           updateData.amount = newAmount;
           const diff = newAmount - oldAmt;
           const diffStr = diff > 0 ? `+${formatRupiah(diff)}` : `-${formatRupiah(Math.abs(diff))}`;
-          changeBullet = `💰 Nominal: *${formatRupiah(oldAmt)}* ➔ *${formatRupiah(newAmount)}* (${diffStr})`;
+          changeBullet = `▣ Nominal: *${formatRupiah(oldAmt)}* ➔ *${formatRupiah(newAmount)}* (${diffStr})`;
         } else if (subAction === 'edit_category') {
           const oldCat = targetTx.category;
           const targetCategory = matchCategory(categoryInput) || categoryInput;
           updateData.category = targetCategory;
-          changeBullet = `🏷️ Kategori: *${oldCat}* ➔ *${targetCategory}*`;
+          changeBullet = `◆ Kategori: *${oldCat}* ➔ *${targetCategory}*`;
         } else if (subAction === 'edit_description') {
           const oldDesc = targetTx.description;
           updateData.description = newDescription;
-          changeBullet = `📦 Keterangan: *${oldDesc}* ➔ *${newDescription}*`;
+          changeBullet = `▤ Keterangan: *${oldDesc}* ➔ *${newDescription}*`;
           const autoCat = detectCategory(newDescription, targetTx.type, targetTx.amount) || matchCategory(newDescription);
           if (autoCat && autoCat !== targetTx.category) {
             updateData.category = autoCat;
-            changeBullet += `\n• 🏷️ Kategori otomatis dialihkan ke: *${autoCat}*`;
+            changeBullet += `\n• ◆ Kategori otomatis dialihkan ke: *${autoCat}*`;
           }
         }
 
@@ -1467,9 +1467,9 @@ router.post('/webhook', async (req, res) => {
             const todayStatus = await checkBudgetStatus(userNumber, updatedTx.category);
             if (todayStatus && todayStatus.hasBudget) {
               if (todayStatus.isTodayOver) {
-                budgetContext = `\n\n⚠️ *Batas Hari Ini (${updatedTx.category}):* Terpakai ${formatRupiah(todayStatus.todaySpent)} / Jatah ${formatRupiah(todayStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(todayStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(todayStatus.nextDayAllowance)}/hari)`;
+                budgetContext = `\n\n⚠ *Batas Hari Ini (${updatedTx.category}):* jatah harian ${formatRupiah(todayStatus.todayDailyLimit)}, keluar ${formatRupiah(todayStatus.todaySpent)} → lebih ${formatRupiah(Math.abs(todayStatus.todayDailyRemaining))}. Jatah besok ${formatRupiah(todayStatus.nextDayAllowance)}/hari`;
               } else {
-                budgetContext = `\n\n💡 *Batas Hari Ini (${updatedTx.category}):* Jatah ${formatRupiah(todayStatus.todayDailyLimit)} | Keluar ${formatRupiah(todayStatus.todaySpent)} | Sisa ${formatRupiah(todayStatus.todayDailyRemaining)}`;
+                budgetContext = `\n\n▸ *Batas Hari Ini (${updatedTx.category}):* jatah harian ${formatRupiah(todayStatus.todayDailyLimit)}, keluar ${formatRupiah(todayStatus.todaySpent)}, sisa ${formatRupiah(todayStatus.todayDailyRemaining)}`;
               }
             }
           } catch (err) {
@@ -1478,13 +1478,14 @@ router.post('/webhook', async (req, res) => {
         }
 
         const replyMsg =
-          `✏️ *${changeTitle}*\n\n` +
-          `• ${changeBullet}\n` +
-          `• 📦 Barang/Keterangan: ${updatedTx.description}\n` +
-          `• 🏷️ Kategori: ${updatedTx.category}\n` +
-          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}\n` +
-          `• 🔖 Ref: ${refCode(updatedTx.id)}` +
+          `✏ *${changeTitle}*\n\n` +
+          `*Yang diubah:*\n• ${changeBullet}\n\n` +
+          `*Kondisi sekarang:*\n` +
+          `• ▤ ${updatedTx.description}\n` +
+          `• ◆ ${updatedTx.category}\n` +
+          `• ▣ ${formatRupiah(updatedTx.amount)}` +
           (targetVia ? ` _(dipilih dari ${targetVia})_` : '') +
+          `\n• ⚑ Ref: ${refCode(updatedTx.id)}` +
           budgetContext +
           `\n\n_Catatan sudah diperbarui otomatis._`;
 
@@ -1505,7 +1506,7 @@ router.post('/webhook', async (req, res) => {
           }));
 
         if (!lastTx) {
-          return await sendWhatsAppMessage(from, 'i️ Belum ada transaksi untuk diubah.');
+          return await sendWhatsAppMessage(from, 'i Belum ada transaksi untuk diubah.');
         }
 
         const { field, value } = parsed;
@@ -1540,22 +1541,22 @@ router.post('/webhook', async (req, res) => {
           const budgetStatus = await checkBudgetStatus(userNumber, updatedTx.category);
           if (budgetStatus.hasBudget) {
             if (budgetStatus.isOverbudget) {
-              budgetAlert = `\n\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${updatedTx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
+              budgetAlert = `\n\n⚠ *PERINGATAN OVERBUDGET:* Pengeluaran '${updatedTx.category}' sudah MELEBIHI batas! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})`;
             } else if (budgetStatus.isWarning) {
-              budgetAlert = `\n\n⚠️ *Perhatian:* Pengeluaran '${updatedTx.category}' sudah ${budgetStatus.percentage}% dari budget (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
+              budgetAlert = `\n\n⚠ *Perhatian:* Pengeluaran '${updatedTx.category}' sudah ${budgetStatus.percentage}% dari budget (Sisa: ${formatRupiah(budgetStatus.remaining)})`;
             } else {
-              budgetAlert = `\n\n📊 *Sisa kuota ${updatedTx.category}:* ${formatRupiah(budgetStatus.remaining)} (Terpakai: ${formatRupiah(budgetStatus.totalSpent)})`;
+              budgetAlert = `\n\n▮ *Sisa kuota ${updatedTx.category}:* ${formatRupiah(budgetStatus.remaining)} (Terpakai: ${formatRupiah(budgetStatus.totalSpent)})`;
             }
           }
         }
 
         const editReply =
-          `✏️ *Transaksi Terakhir Berhasil Diperbarui!*\n\n` +
+          `✏ *Transaksi Terakhir Berhasil Diperbarui!*\n\n` +
           `• ${changeNote}\n` +
-          `• 📦 Barang/Keterangan: ${updatedTx.description}\n` +
-          `• 🏷️ Kategori: ${updatedTx.category}\n` +
-          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}\n` +
-          `• 🔖 Ref: ${refCode(updatedTx.id)}` +
+          `• ▤ Barang/Keterangan: ${updatedTx.description}\n` +
+          `• ◆ Kategori: ${updatedTx.category}\n` +
+          `• ▣ Nominal: ${formatRupiah(updatedTx.amount)}\n` +
+          `• ⚑ Ref: ${refCode(updatedTx.id)}` +
           (referencedEdit && referencedEdit.tx ? ` _(dipilih dari ${referencedEdit.via})_` : '') +
           budgetAlert +
           `\n\n_Ketik *batal* jika ingin membatalkan, atau *budget* untuk cek status._`;
@@ -1572,7 +1573,7 @@ router.post('/webhook', async (req, res) => {
           const catList = Object.keys(DEFAULT_BUDGETS).map((c) => `• ${c}`).join('\n');
           return await sendWhatsAppMessage(
             from,
-            `⚠️ Kategori *'${parsed.categoryInput}'* tidak dikenali.\n\nPilih salah satu dari 10 kantong resmi berikut:\n${catList}`
+            `⚠ Kategori *'${parsed.categoryInput}'* tidak dikenali.\n\nPilih salah satu dari 10 kantong resmi berikut:\n${catList}`
           );
         }
 
@@ -1648,7 +1649,7 @@ router.post('/webhook', async (req, res) => {
         if (matchingTxs.length === 0) {
           return await sendWhatsAppMessage(
             from,
-            `⚠️ Tidak ditemukan transaksi yang cocok dengan kata kunci *"${parsed.query}"*.\n\n` +
+            `⚠ Tidak ditemukan transaksi yang cocok dengan kata kunci *"${parsed.query}"*.\n\n` +
             `_Tips: Pastikan nama barang/keterangan yang pernah dicatat sudah sesuai (contoh: "ubah kategori galon ke makanan dan minuman")._`
           );
         }
@@ -1665,16 +1666,16 @@ router.post('/webhook', async (req, res) => {
         if (updatedTx.type === 'expense') {
           const budgetStatus = await checkBudgetStatus(userNumber, targetCategory);
           if (budgetStatus.hasBudget) {
-            budgetAlert = `\n\n📊 *Sisa kuota ${targetCategory}:* ${formatRupiah(budgetStatus.remaining)} (Terpakai: ${formatRupiah(budgetStatus.totalSpent)})`;
+            budgetAlert = `\n\n▮ *Sisa kuota ${targetCategory}:* ${formatRupiah(budgetStatus.remaining)} (Terpakai: ${formatRupiah(budgetStatus.totalSpent)})`;
           }
         }
 
         const reply =
-          `✏️ *Kategori Transaksi Berhasil Diperbarui!*\n\n` +
-          `• 📦 *Barang/Catatan:* ${updatedTx.description}\n` +
-          `• 🏷️ *Kategori:* ${oldCategory} ➔ *${targetCategory}*\n` +
-          `• 💰 *Nominal:* ${formatRupiah(updatedTx.amount)}\n` +
-          `• 📅 *Tanggal:* ${dayjs(updatedTx.createdAt).format('DD/MM/YYYY')}` +
+          `✏ *Kategori Transaksi Berhasil Diperbarui!*\n\n` +
+          `• ▤ *Barang/Catatan:* ${updatedTx.description}\n` +
+          `• ◆ *Kategori:* ${oldCategory} ➔ *${targetCategory}*\n` +
+          `• ▣ *Nominal:* ${formatRupiah(updatedTx.amount)}\n` +
+          `• ⏰ *Tanggal:* ${dayjs(updatedTx.createdAt).format('DD/MM/YYYY')}` +
           budgetAlert +
           `\n\n_Ketik *budget* untuk melihat pembaruan alokasi kuota Anda._`;
 
@@ -1691,15 +1692,15 @@ router.post('/webhook', async (req, res) => {
         const res = await addBill(userNumber, parsed.name, parsed.amount, parsed.dueDay);
         const msg = res.isNew
           ? `✅ *Tagihan Rutin Berhasil Ditambahkan!*\n\n` +
-            `• 📋 Nama: *${res.bill.name}*\n` +
-            `• 💰 Nominal: ${formatRupiah(res.bill.amount)}\n` +
-            `• 🗓️ Jatuh Tempo: Setiap tanggal ${res.bill.dueDay}\n` +
-            `• 🏷️ Kategori: ${res.bill.category}\n\n` +
+            `• ▤ Nama: *${res.bill.name}*\n` +
+            `• ▣ Nominal: ${formatRupiah(res.bill.amount)}\n` +
+            `• ⏰ Jatuh Tempo: Setiap tanggal ${res.bill.dueDay}\n` +
+            `• ◆ Kategori: ${res.bill.category}\n\n` +
             `_Bot akan otomatis mengingatkan Anda saat mendekati tanggal jatuh tempo._`
           : `✅ *Tagihan Rutin '${res.bill.name}' Berhasil Diperbarui!*\n\n` +
-            `• 💰 Nominal: ${formatRupiah(res.bill.amount)}\n` +
-            `• 🗓️ Jatuh Tempo: Setiap tanggal ${res.bill.dueDay}\n` +
-            `• 🏷️ Kategori: ${res.bill.category}`;
+            `• ▣ Nominal: ${formatRupiah(res.bill.amount)}\n` +
+            `• ⏰ Jatuh Tempo: Setiap tanggal ${res.bill.dueDay}\n` +
+            `• ◆ Kategori: ${res.bill.category}`;
 
         return await sendWhatsAppMessage(from, msg);
       }
@@ -1707,20 +1708,20 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'pay_bill') {
         const res = await payBill(userNumber, parsed.name);
         if (!res.success) {
-          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+          return await sendWhatsAppMessage(from, `⚠ ${res.error}`);
         }
 
         const budgetStatus = await checkBudgetStatus(userNumber, res.bill.category);
         let budgetAlert = '';
         if (budgetStatus.hasBudget) {
-          budgetAlert = `\n📊 *Sisa kuota ${res.bill.category}:* ${formatRupiah(budgetStatus.remaining)}`;
+          budgetAlert = `\n▮ *Sisa kuota ${res.bill.category}:* ${formatRupiah(budgetStatus.remaining)}`;
         }
 
         const msg =
-          `🎉 *Pelunasan Tagihan Berhasil Dicatat!*\n\n` +
-          `• 📋 Tagihan: *${res.bill.name}*\n` +
-          `• 💸 Nominal: ${formatRupiah(res.bill.amount)}\n` +
-          `• 🏷️ Kategori: ${res.bill.category}` +
+          `★ *Pelunasan Tagihan Berhasil Dicatat!*\n\n` +
+          `• ▤ Tagihan: *${res.bill.name}*\n` +
+          `• ▣ Nominal: ${formatRupiah(res.bill.amount)}\n` +
+          `• ◆ Kategori: ${res.bill.category}` +
           budgetAlert +
           `\n\n✅ Transaksi otomatis tercatat ke pembukuan pengeluaran Anda.\n` +
           `_Ketik *tagihan* untuk melihat status tagihan lainnya._`;
@@ -1731,9 +1732,9 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'remove_bill') {
         const res = await removeBill(userNumber, parsed.name);
         if (!res.success) {
-          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+          return await sendWhatsAppMessage(from, `⚠ ${res.error}`);
         }
-        return await sendWhatsAppMessage(from, `🗑️ Tagihan rutin *${res.bill.name}* telah dinonaktifkan.`);
+        return await sendWhatsAppMessage(from, `✖ Tagihan rutin *${res.bill.name}* telah dinonaktifkan.`);
       }
 
       // 2g-4. BUKU CATATAN HUTANG & PIUTANG
@@ -1751,16 +1752,16 @@ router.post('/webhook', async (req, res) => {
           parsed.description
         );
         const isLoan = debt.type === 'loan';
-        const title = isLoan ? '🟢 Piutang Baru Dicatat (Uang Anda di Orang Lain)' : '🔴 Hutang Baru Dicatat (Kewajiban Anda)';
+        const title = isLoan ? '● Piutang Baru Dicatat (Uang Anda di Orang Lain)' : '● Hutang Baru Dicatat (Kewajiban Anda)';
         const personLabel = isLoan ? 'Peminjam' : 'Pemberi Pinjaman';
-        const descText = debt.description ? `\n• 📝 Catatan: ${debt.description}` : '';
+        const descText = debt.description ? `\n• ✎ Catatan: ${debt.description}` : '';
 
         const msg =
-          `📒 *${title}*\n\n` +
-          `• 👤 ${personLabel}: *${debt.personName}*\n` +
-          `• 💰 Nominal: ${formatRupiah(debt.amount)}` +
+          `▤ *${title}*\n\n` +
+          `• ◇ ${personLabel}: *${debt.personName}*\n` +
+          `• ▣ Nominal: ${formatRupiah(debt.amount)}` +
           descText +
-          `\n• 🕒 Tanggal: ${dayjs(debt.createdAt).format('DD/MM/YYYY')}\n\n` +
+          `\n• ⏰ Tanggal: ${dayjs(debt.createdAt).format('DD/MM/YYYY')}\n\n` +
           `_Ketik *hutang* untuk melihat buku hutang atau \`lunas ${debt.personName}\` jika sudah diselesaikan._`;
 
         return await sendWhatsAppMessage(from, msg);
@@ -1769,19 +1770,19 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'settle_debt') {
         const res = await settleDebt(userNumber, parsed.personName);
         if (!res.success) {
-          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+          return await sendWhatsAppMessage(from, `⚠ ${res.error}`);
         }
 
         const isLoan = res.debt.type === 'loan';
-        const title = isLoan ? '🟢 Piutang Telah Dilunasi' : '🔴 Hutang Anda Telah Dilunasi';
+        const title = isLoan ? '● Piutang Telah Dilunasi' : '● Hutang Anda Telah Dilunasi';
 
         const msg =
-          `🎉 *${title}!*\n\n` +
-          `• 👤 Atas Nama: *${res.debt.personName}*\n` +
-          `• 💰 Nominal: ${formatRupiah(res.debt.amount)}\n` +
-          `• 🕒 Waktu Pelunasan: ${dayjs(res.debt.paidAt).format('DD/MM/YYYY HH:mm')}\n\n` +
+          `★ *${title}!*\n\n` +
+          `• ◇ Atas Nama: *${res.debt.personName}*\n` +
+          `• ▣ Nominal: ${formatRupiah(res.debt.amount)}\n` +
+          `• ⏰ Waktu Pelunasan: ${dayjs(res.debt.paidAt).format('DD/MM/YYYY HH:mm')}\n\n` +
           (isLoan
-            ? `💡 _Jika uang yang diterima ingin dicatat sebagai uang masuk ke kas, ketik: \`+pemasukan ${res.debt.amount} pelunasan piutang ${res.debt.personName}\`_`
+            ? `▸ _Jika uang yang diterima ingin dicatat sebagai uang masuk ke kas, ketik: \`+pemasukan ${res.debt.amount} pelunasan piutang ${res.debt.personName}\`_`
             : `✅ Kewajiban hutang Anda kepada ${res.debt.personName} telah ditandai lunas.`);
 
         return await sendWhatsAppMessage(from, msg);
@@ -1815,7 +1816,7 @@ router.post('/webhook', async (req, res) => {
           const catList = availableCats.map((c) => `• ${c}`).join('\n');
           return await sendWhatsAppMessage(
             from,
-            `⚠️ Kantong *'${parsed.categoryInput}'* tidak dikenali.\n\n` +
+            `⚠ Kantong *'${parsed.categoryInput}'* tidak dikenali.\n\n` +
               `Pilih salah satu dari ${availableCats.length} kantong resmi berikut:\n${catList}\n\n` +
               `_Contoh: ketik *set budget bensin 250rb*_`
           );
@@ -1825,8 +1826,8 @@ router.post('/webhook', async (req, res) => {
 
         const reply =
           `✅ *Batas Anggaran Berhasil Diperbarui!*\n\n` +
-          `🎯 *Kategori:* ${matchedCat}\n` +
-          `💵 *Limit Baru:* ${formatRupiah(parsed.amount)} / siklus\n\n` +
+          `◆ *Kategori:* ${matchedCat}\n` +
+          `▣ *Limit Baru:* ${formatRupiah(parsed.amount)} / siklus\n\n` +
           `_Ketik *budget* untuk melihat seluruh status anggaran._`;
 
         return await sendWhatsAppMessage(from, reply);
@@ -1837,7 +1838,7 @@ router.post('/webhook', async (req, res) => {
         const rules = await listRules(userNumber);
         return await sendWhatsAppMessage(
           from,
-          `⚙️ *ATURAN KATEGORI PRIBADI*\n\n${formatRuleList(rules)}\n\n` +
+          `⚙ *ATURAN KATEGORI PRIBADI*\n\n${formatRuleList(rules)}\n\n` +
             `_Tambah: \`kalau aku bilang ngopi masuk nongkrong\`_\n` +
             `_Hapus: \`hapus aturan ngopi\`_`
         );
@@ -1847,15 +1848,15 @@ router.post('/webhook', async (req, res) => {
         const isAlias = parsed.kind === 'text';
         const res = await addRule(userNumber, parsed.keyword, parsed.categoryInput, parsed.kind);
         if (!res.success) {
-          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+          return await sendWhatsAppMessage(from, `⚠ ${res.error}`);
         }
 
         if (isAlias) {
           return await sendWhatsAppMessage(
             from,
             `${res.isNew ? '✅ *Alias Baru Disimpan!*' : '✅ *Alias Diperbarui!*'}\n\n` +
-              `• 🔑 Kata kunci: *${res.rule.keyword}*\n` +
-              `• 🔄 Diganti jadi: *${res.rule.category}*\n\n` +
+              `• ◆ Kata kunci: *${res.rule.keyword}*\n` +
+              `• ♻ Diganti jadi: *${res.rule.category}*\n\n` +
               `_Mulai sekarang setiap kali Anda menulis "${res.rule.keyword}", sistem otomatis membacanya sebagai "${res.rule.category}"._\n\n` +
               `_Contoh: "makan ${res.rule.keyword}" → dibaca "makan ${res.rule.category}"._`
           );
@@ -1864,8 +1865,8 @@ router.post('/webhook', async (req, res) => {
         return await sendWhatsAppMessage(
           from,
           `${res.isNew ? '✅ *Aturan Baru Disimpan!*' : '✅ *Aturan Diperbarui!*'}\n\n` +
-            `• 🔑 Kata kunci: *${res.rule.keyword}*\n` +
-            `• 🏷️ Otomatis masuk: *${res.rule.category}*\n\n` +
+            `• ◆ Kata kunci: *${res.rule.keyword}*\n` +
+            `• ◆ Otomatis masuk: *${res.rule.category}*\n\n` +
             `_Mulai sekarang setiap transaksi yang menyebut "${res.rule.keyword}" akan masuk kantong itu._`
         );
       }
@@ -1873,9 +1874,9 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'remove_rule') {
         const res = await removeRule(userNumber, parsed.keyword);
         if (!res.success) {
-          return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
+          return await sendWhatsAppMessage(from, `⚠ ${res.error}`);
         }
-        return await sendWhatsAppMessage(from, `🗑️ Aturan *${res.rule.keyword}* dinonaktifkan.`);
+        return await sendWhatsAppMessage(from, `✖ Aturan *${res.rule.keyword}* dinonaktifkan.`);
       }
 
       if (parsed.action === 'trigger_weekly_insight') {
@@ -1922,11 +1923,11 @@ router.post('/webhook', async (req, res) => {
         }
 
         const report =
-          `📊 *REKAP KEUANGAN ${label.toUpperCase()}*\n\n` +
-          `💰 *Total Pemasukan:* ${formatRupiah(totalIncome)}\n` +
-          `💸 *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n` +
-          `📈 *Sisa Saldo:* ${formatRupiah(netBalance)}\n` +
-          `📝 *Jumlah Transaksi:* ${transactions.length}` +
+          `▮ *REKAP KEUANGAN ${label.toUpperCase()}*\n\n` +
+          `▣ *Total Pemasukan:* ${formatRupiah(totalIncome)}\n` +
+          `▣ *Total Pengeluaran:* ${formatRupiah(totalExpense)}\n` +
+          `▲ *Sisa Saldo:* ${formatRupiah(netBalance)}\n` +
+          `✎ *Jumlah Transaksi:* ${transactions.length}` +
           categoryBreakdown +
           `\n\n_Ketik 'budget' untuk cek sisa kuota atau 'export excel' untuk laporan detail._`;
 
@@ -1943,11 +1944,11 @@ router.post('/webhook', async (req, res) => {
           await prisma.transaction.delete({ where: { id: tx.id } });
 
           const targetedReply =
-            `🗑️ *Transaksi Dibatalkan (bertarget)!*\n\n` +
-            `• 📦 Barang/Keterangan: ${tx.description}\n` +
-            `• 🏷️ Kategori: ${tx.category}\n` +
-            `• 💰 Nominal: ${formatRupiah(tx.amount)}\n` +
-            `• 🔖 Ref: ${refCode(tx.id)} _(dipilih dari ${referencedUndo.via})_`;
+            `✖ *Transaksi Dibatalkan (bertarget)!*\n\n` +
+            `• ▤ Barang/Keterangan: ${tx.description}\n` +
+            `• ◆ Kategori: ${tx.category}\n` +
+            `• ▣ Nominal: ${formatRupiah(tx.amount)}\n` +
+            `• ⚑ Ref: ${refCode(tx.id)} _(dipilih dari ${referencedUndo.via})_`;
 
           return await sendWhatsAppMessage(from, targetedReply);
         }
@@ -1958,7 +1959,7 @@ router.post('/webhook', async (req, res) => {
         });
 
         if (!lastTx) {
-          return await sendWhatsAppMessage(from, 'ℹ️ Tidak ada transaksi untuk dibatalkan.');
+          return await sendWhatsAppMessage(from, '▸ Tidak ada transaksi untuk dibatalkan.');
         }
 
         // Batalkan berdasarkan batchId dari satu pesan multi-item.
@@ -1981,7 +1982,7 @@ router.post('/webhook', async (req, res) => {
             .join('\n');
 
           const undoReply =
-            `🗑️ *${recentTxs.length} Transaksi Terakhir Dibatalkan Sekaligus!*\n\n` +
+            `✖ *${recentTxs.length} Transaksi Terakhir Dibatalkan Sekaligus!*\n\n` +
             itemsDeleted;
 
           return await sendWhatsAppMessage(from, undoReply);
@@ -1990,7 +1991,7 @@ router.post('/webhook', async (req, res) => {
         await prisma.transaction.delete({ where: { id: lastTx.id } });
 
         const undoReply =
-          `🗑️ *Transaksi Terakhir Dibatalkan!*\n\n` +
+          `✖ *Transaksi Terakhir Dibatalkan!*\n\n` +
           `• Tipe: ${lastTx.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}\n` +
           `• Nominal: ${formatRupiah(lastTx.amount)}\n` +
           `• Keterangan: ${lastTx.description}\n` +
@@ -2009,14 +2010,14 @@ router.post('/webhook', async (req, res) => {
         });
 
         if (transactions.length === 0) {
-          return await sendWhatsAppMessage(from, 'ℹ️ Belum ada transaksi untuk diekspor.');
+          return await sendWhatsAppMessage(from, '▸ Belum ada transaksi untuk diekspor.');
         }
 
         const { exportPath, fileName, totalIncome, totalExpense } =
           await generateFinancialExcel(transactions, `Laporan Keuangan ${userNumber}`);
 
         const caption =
-          `📄 *Laporan Keuangan Berhasil Dibuat!*\n` +
+          `▤ *Laporan Keuangan Berhasil Dibuat!*\n` +
           `• Total Pemasukan: ${formatRupiah(totalIncome)}\n` +
           `• Total Pengeluaran: ${formatRupiah(totalExpense)}\n` +
           `• Total Transaksi: ${transactions.length}`;
@@ -2106,13 +2107,13 @@ router.post('/webhook', async (req, res) => {
       `• \`budget\` (cek kuota anggaran & sisa hari)\n` +
       `• \`alokasi\` (panduan alokasi bank)\n` +
       `• Kirim foto struk belanja / m-banking\n\n` +
-      `💡 _Anda juga bisa curhat atau cerita pengeluaran bebas dengan bahasa santai, Gemini AI kami akan langsung memahaminya!_\n\n` +
+      `▸ _Anda juga bisa curhat atau cerita pengeluaran bebas dengan bahasa santai, Gemini AI kami akan langsung memahaminya!_\n\n` +
       `Ketik *bantuan* untuk melihat semua menu.`;
 
     await sendWhatsAppMessage(from, unknownReply);
   } catch (err) {
     console.error('Error handling webhook:', err);
-    await sendWhatsAppMessage(from, `⚠️ Terjadi kesalahan: ${err.message}`);
+    await sendWhatsAppMessage(from, `⚠ Terjadi kesalahan: ${err.message}`);
   }
 });
 

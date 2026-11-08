@@ -234,21 +234,21 @@ async function generateBudgetReport(userNumber) {
     const bar = renderProgressBar(pct, 10);
     const sisa = b.monthlyLimit - spent;
 
-    let statusEmoji = '🟢';
-    if (pct >= 100) statusEmoji = '🚨';
-    else if (pct >= 80) statusEmoji = '⚠️';
+    let statusEmoji = '●';
+    if (pct >= 100) statusEmoji = '⚠';
+    else if (pct >= 80) statusEmoji = '⚠';
 
     let extraNote = '';
     if (b.category === 'Makanan & Minuman' && sisa > 0) {
       const daily = Math.round(sisa / cycle.daysRemaining);
-      extraNote = `\n   🍚 _Jatah aman: ${formatRupiah(daily)}/hari_`;
+      extraNote = `\n   ☰ _Jatah aman: ${formatRupiah(daily)}/hari_`;
     }
 
     reportItems.push(
       `${statusEmoji} *${b.category}*\n` +
       `[${bar}] ${pct}%\n` +
       `Terpakai: ${formatRupiah(spent)} / ${formatRupiah(b.monthlyLimit)}\n` +
-      `Sisa: ${sisa >= 0 ? formatRupiah(sisa) : `-${formatRupiah(Math.abs(sisa))} (Over)`}` +
+      `Sisa: ${sisa >= 0 ? formatRupiah(sisa) : `lebih ${formatRupiah(Math.abs(sisa))}`}` +
       extraNote
     );
   });
@@ -257,16 +257,16 @@ async function generateBudgetReport(userNumber) {
   const overallBar = renderProgressBar(overallPct, 12);
 
   const message =
-    `🎯 *STATUS ANGGARAN SIKLUS GAJIAN*\n` +
-    `🗓️ *Periode:* ${cycle.label}\n` +
+    `◆ *STATUS ANGGARAN SIKLUS GAJIAN*\n` +
+    `⏰ *Periode:* ${cycle.label}\n` +
     `⏳ *Hari ke-${cycle.daysPassed} dari ${cycle.totalDays}* (Sisa ${cycle.daysRemaining} hari menuju gajian)\n\n` +
     reportItems.join('\n\n') +
     `\n\n═══════════════════════\n` +
-    `📊 *TOTAL KESELURUHAN SIKLUS:*\n` +
+    `▮ *TOTAL KESELURUHAN SIKLUS:*\n` +
     `[${overallBar}] ${overallPct}%\n` +
-    `💸 *Total Terpakai:* ${formatRupiah(totalSpent)}\n` +
-    `🎯 *Batas Anggaran:* ${formatRupiah(totalLimit)}\n` +
-    `💰 *Sisa Alokasi:* ${formatRupiah(totalLimit - totalSpent)}\n\n` +
+    `▣ *Total Terpakai:* ${formatRupiah(totalSpent)}\n` +
+    `◆ *Batas Anggaran:* ${formatRupiah(totalLimit)}\n` +
+    `▣ *Sisa Alokasi:* ${formatRupiah(totalLimit - totalSpent)}\n\n` +
     `_Tips: Ketik \`alokasi\` untuk panduan pembagian gaji tgl 21 & 1, atau \`set budget [kategori] [nominal]\`._`;
 
   return message;
@@ -317,27 +317,27 @@ async function generateTodayBudgetReport(userNumber, targetCategory = null) {
     const daysAfterToday = Math.max(1, cycle.daysRemaining - 1);
     const nextDayDaily = remainingCycle > 0 ? Math.round(remainingCycle / daysAfterToday) : 0;
 
-    let statusEmoji = '🟢';
+    let statusEmoji = '●';
     let statusText = 'Masih dalam batas aman';
     if (todayRemaining < 0) {
-      statusEmoji = '🚨';
-      statusText = `Over ${formatRupiah(Math.abs(todayRemaining))} hari ini!`;
+      statusEmoji = '⚠';
+      statusText = `lebih ${formatRupiah(Math.abs(todayRemaining))} dari jatah harian`;
     } else if (todayRemaining === 0 && todayLimit > 0) {
-      statusEmoji = '⚠️';
+      statusEmoji = '⚠';
       statusText = 'Jatah hari ini pas habis';
     }
 
     return (
-      `🎯 *STATUS JATAH HARI INI: ${b.category.toUpperCase()}*\n` +
-      `🗓️ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
+      `◆ *STATUS JATAH HARI INI: ${b.category.toUpperCase()}*\n` +
+      `⏰ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
       `⏳ *Sisa Siklus:* ${cycle.daysRemaining} hari menuju gajian (${cycle.label})\n\n` +
-      `🎯 *Batas Hari Ini:* ${formatRupiah(todayLimit)}\n` +
-      `💸 *Terpakai Hari Ini:* ${formatRupiah(spentToday)}\n` +
-      `${statusEmoji} *Sisa Hari Ini:* ${todayRemaining >= 0 ? formatRupiah(todayRemaining) : '-' + formatRupiah(Math.abs(todayRemaining)) + ' (Over)'}\n` +
-      `📌 *Status:* ${statusText}\n\n` +
+      `◆ *Batas Hari Ini:* ${formatRupiah(todayLimit)}\n` +
+      `▣ *Terpakai Hari Ini:* ${formatRupiah(spentToday)}\n` +
+      `${statusEmoji} *Sisa Hari Ini:* ${todayRemaining >= 0 ? formatRupiah(todayRemaining) : 'lebih ' + formatRupiah(Math.abs(todayRemaining))}\n` +
+      `⚑ *Status:* ${statusText}\n\n` +
       `═══════════════════════\n` +
-      `📊 *Sisa Kuota Siklus:* ${formatRupiah(remainingCycle)} dari ${formatRupiah(b.monthlyLimit)}\n` +
-      `💡 *Jatah Harian Besok:* ${formatRupiah(nextDayDaily)}/hari\n\n` +
+      `▮ *Sisa Kuota Siklus:* ${formatRupiah(remainingCycle)} dari ${formatRupiah(b.monthlyLimit)}\n` +
+      `▸ *Jatah Harian Besok:* ${formatRupiah(nextDayDaily)}/hari\n\n` +
       `_Tips: Setiap belanja baru otomatis memotong sisa hari ini._`
     );
   }
@@ -380,35 +380,35 @@ async function generateTodayBudgetReport(userNumber, targetCategory = null) {
     totalTodayLimit += todayLimit;
     totalTodaySpent += spentToday;
 
-    let emoji = '🟢';
-    if (todayRemaining < 0) emoji = '🚨';
-    else if (todayRemaining === 0 && todayLimit > 0) emoji = '⚠️';
+    let emoji = '●';
+    if (todayRemaining < 0) emoji = '⚠';
+    else if (todayRemaining === 0 && todayLimit > 0) emoji = '⚠';
     else if (spentToday === 0) emoji = '⚪';
 
-    const sisaText = todayRemaining >= 0 ? formatRupiah(todayRemaining) : '-' + formatRupiah(Math.abs(todayRemaining)) + ' (Over)';
+    const sisaText = todayRemaining >= 0 ? formatRupiah(todayRemaining) : 'lebih ' + formatRupiah(Math.abs(todayRemaining));
 
     itemsReport.push(
       `${emoji} *${catName}*\n` +
       `   Jatah: ${formatRupiah(todayLimit)} | Keluar: ${formatRupiah(spentToday)}\n` +
-      `   └ 💰 *Sisa Hari Ini: ${sisaText}* _(Siklus: ${formatRupiah(remainingCycle)})_`
+      `   └ ▣ *Sisa Hari Ini: ${sisaText}* _(Siklus: ${formatRupiah(remainingCycle)})_`
     );
   }
 
   const totalTodayRemaining = totalTodayLimit - totalTodaySpent;
-  let totalEmoji = '🟢';
-  if (totalTodayRemaining < 0) totalEmoji = '🚨';
-  else if (totalTodayRemaining === 0) totalEmoji = '⚠️';
+  let totalEmoji = '●';
+  if (totalTodayRemaining < 0) totalEmoji = '⚠';
+  else if (totalTodayRemaining === 0) totalEmoji = '⚠';
 
   return (
-    `🎯 *STATUS JATAH BUDGET HARI INI*\n` +
-    `🗓️ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
+    `◆ *STATUS JATAH BUDGET HARI INI*\n` +
+    `⏰ *Hari Ini:* ${d.format('dddd, DD MMMM YYYY')}\n` +
     `⏳ *Sisa Siklus:* ${cycle.daysRemaining} hari menuju gajian (${cycle.label})\n\n` +
     itemsReport.join('\n\n') +
     `\n\n═══════════════════════\n` +
-    `📊 *TOTAL HARIAN (KATEGORI RUTIN):*\n` +
-    `🎯 *Batas Hari Ini:* ${formatRupiah(totalTodayLimit)}\n` +
-    `💸 *Total Belanja Hari Ini:* ${formatRupiah(totalTodaySpent)}\n` +
-    `${totalEmoji} *Sisa Jatah Hari Ini:* ${totalTodayRemaining >= 0 ? formatRupiah(totalTodayRemaining) : '-' + formatRupiah(Math.abs(totalTodayRemaining)) + ' (Over)'}\n\n` +
+    `▮ *TOTAL HARIAN (KATEGORI RUTIN):*\n` +
+    `◆ *Batas Hari Ini:* ${formatRupiah(totalTodayLimit)}\n` +
+    `▣ *Total Belanja Hari Ini:* ${formatRupiah(totalTodaySpent)}\n` +
+    `${totalEmoji} *Sisa Jatah Hari Ini:* ${totalTodayRemaining >= 0 ? formatRupiah(totalTodayRemaining) : 'lebih ' + formatRupiah(Math.abs(totalTodayRemaining))}\n\n` +
     `_Tips: Belanja baru otomatis mengurangi jatah hari ini. Ketik \`budget\` untuk rekap bulanan atau \`jatah makan hari ini\` untuk kategori tertentu._`
   );
 }
@@ -621,30 +621,30 @@ function getDualCycleGuide() {
   const cycle = getPayCycleRange();
 
   return (
-    `📋 *STRATEGI & PANDUAN DUA SIKLUS GAJI*\n` +
-    `🗓️ *Siklus Aktif:* ${cycle.label}\n` +
+    `▤ *STRATEGI & PANDUAN DUA SIKLUS GAJI*\n` +
+    `⏰ *Siklus Aktif:* ${cycle.label}\n` +
     `⏳ *Sisa Waktu:* ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *1. TANGGAL 21 — MASUK RP 4.100.000 (DI BSI)*\n` +
+    `▣ *1. TANGGAL 21 — MASUK RP 4.100.000 (DI BSI)*\n` +
     `_Pindahkan Segera (Tgl 21–22) ke 2 Bank Tujuan:_\n\n` +
-    `🟠 *A. PINDAH KE SEABANK (Total Rp 800.000 — Aset Dingin):*\n` +
-    `• 🔒 *Tabungan & Investasi:* Rp 300.000\n` +
-    `• 🛡️ *Dana Darurat:* Rp 500.000 (Bunga harian & terkunci aman)\n\n` +
-    `🟣 *B. PINDAH KE BANK JAGO (Total Rp 3.300.000 — Masuk ke Kantong):*\n` +
-    `• 👨‍👩‍👧 *Kantong Kirim Ortu:* Rp 400.000 (Langsung transfer ke ortu)\n` +
-    `• 💡 *Kantong Listrik, Air & Wifi:* Rp 400.000 (Bayar tagihan)\n` +
-    `• 📶 *Kantong Kuota & Internet:* Rp 100.000 (Beli paket data)\n` +
-    `• 🛒 *Kantong Belanja Sembako:* Rp 400.000 (Sabun & sembako)\n` +
-    `• 🍚 *Kantong Uang Makan:* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
-    `• 🚬 *Kantong Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n` +
+    `● *A. PINDAH KE SEABANK (Total Rp 800.000 — Aset Dingin):*\n` +
+    `• ◘ *Tabungan & Investasi:* Rp 300.000\n` +
+    `• ◘ *Dana Darurat:* Rp 500.000 (Bunga harian & terkunci aman)\n\n` +
+    `● *B. PINDAH KE BANK JAGO (Total Rp 3.300.000 — Masuk ke Kantong):*\n` +
+    `• ◇ *Kantong Kirim Ortu:* Rp 400.000 (Langsung transfer ke ortu)\n` +
+    `• ▸ *Kantong Listrik, Air & Wifi:* Rp 400.000 (Bayar tagihan)\n` +
+    `• ⌗ *Kantong Kuota & Internet:* Rp 100.000 (Beli paket data)\n` +
+    `• ▤ *Kantong Belanja Sembako:* Rp 400.000 (Sabun & sembako)\n` +
+    `• ☰ *Kantong Uang Makan:* Rp 1.200.000 (Jatah harian ~Rp 50.000/hari)\n` +
+    `• ◆ *Kantong Rokok & Vape:* Rp 400.000 (Jatah 1 bulan penuh)\n` +
     `• ☕ *Kantong Nongkrong & Hiburan:* Rp 400.000 (Ngopi/refreshing)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💵 *2. TANGGAL 1 — MASUK RP 500.000 (DI BSI)*\n` +
+    `▣ *2. TANGGAL 1 — MASUK RP 500.000 (DI BSI)*\n` +
     `_Langsung Pindah Semua ke Bank Jago:_\n` +
     `• ⛽ *Kantong Bensin & Transport:* Rp 200.000\n` +
-    `• 🍚 *Tambahan Kantong Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 / Rp 50.000 per hari)\n\n` +
+    `• ☰ *Tambahan Kantong Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 / Rp 50.000 per hari)\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🤖 *AUTOMATION BOT:*\n` +
+    `⚙ *AUTOMATION BOT:*\n` +
     `• Setiap Tgl 21 jam 08:00 bot otomatis catat +Rp 4.100.000\n` +
     `• Setiap Tgl 22 jam 08:00 bot otomatis kirim Pengingat Alokasi Bank (SeaBank & Jago)\n` +
     `• Setiap Tgl 1 jam 08:00 bot otomatis catat +Rp 500.000\n` +

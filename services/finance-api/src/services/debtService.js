@@ -68,7 +68,7 @@ async function generateDebtReport(userNumber) {
 
   let loanLines = '';
   if (loans.length > 0) {
-    loanLines = '*🟢 PIUTANG (Uang Anda di Orang Lain):*\n';
+    loanLines = '*● PIUTANG (Uang Anda di Orang Lain):*\n';
     loans.forEach((l, idx) => {
       totalLoans += l.amount;
       const desc = l.description ? ` (${l.description})` : '';
@@ -76,12 +76,12 @@ async function generateDebtReport(userNumber) {
       loanLines += `${idx + 1}. *${l.personName}*: ${formatRupiah(l.amount)}${desc} _[${date}]_\n`;
     });
   } else {
-    loanLines = '*🟢 PIUTANG:* Tidak ada orang yang berhutang ke Anda.\n';
+    loanLines = '*● PIUTANG:* Tidak ada orang yang berhutang ke Anda.\n';
   }
 
   let debtLines = '';
   if (myDebts.length > 0) {
-    debtLines = '\n*🔴 HUTANG (Kewajiban Harus Anda Bayar):*\n';
+    debtLines = '\n*● HUTANG (Kewajiban Harus Anda Bayar):*\n';
     myDebts.forEach((d, idx) => {
       totalDebts += d.amount;
       const desc = d.description ? ` (${d.description})` : '';
@@ -89,17 +89,17 @@ async function generateDebtReport(userNumber) {
       debtLines += `${idx + 1}. *${d.personName}*: ${formatRupiah(d.amount)}${desc} _[${date}]_\n`;
     });
   } else {
-    debtLines = '\n*🔴 HUTANG:* Anda tidak memiliki tanggungan hutang. Bersih! 👍\n';
+    debtLines = '\n*● HUTANG:* Anda tidak memiliki tanggungan hutang. Bersih! ✔\n';
   }
 
   return (
-    `📒 *BUKU CATATAN HUTANG & PIUTANG*\n\n` +
+    `▤ *BUKU CATATAN HUTANG & PIUTANG*\n\n` +
     loanLines +
     debtLines +
     `\n═══════════════════════\n` +
-    `💰 *Total Piutang (Harus Ditagih):* ${formatRupiah(totalLoans)}\n` +
-    `💸 *Total Hutang (Harus Dibayar):* ${formatRupiah(totalDebts)}\n\n` +
-    `💡 *Perintah Cepat:*\n` +
+    `▣ *Total Piutang (Harus Ditagih):* ${formatRupiah(totalLoans)}\n` +
+    `▣ *Total Hutang (Harus Dibayar):* ${formatRupiah(totalDebts)}\n\n` +
+    `▸ *Perintah Cepat:*\n` +
     `• Catat Piutang: \`pinjamkan Budi 100rb\` atau \`piutang Budi 100rb\`\n` +
     `• Catat Hutang: \`hutang ke Andi 50rb\` atau \`pinjam Andi 50rb\`\n` +
     `• Pelunasan: \`lunas piutang Budi\` atau \`lunas hutang Andi\``

@@ -68,15 +68,15 @@ router.post('/', async (req, res) => {
       const budgetStatus = await checkBudgetStatus(userNumber, tx.category);
       if (budgetStatus.hasBudget) {
         if (budgetStatus.isOverbudget) {
-          budgetAlert = `\n🚨 *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})\n`;
+          budgetAlert = `\n⚠ *PERINGATAN OVERBUDGET:* Pengeluaran '${tx.category}' sudah MELEBIHI batas siklus! (Terpakai: ${formatRupiah(budgetStatus.totalSpent)} / Limit: ${formatRupiah(budgetStatus.monthlyLimit)})\n`;
         } else if (budgetStatus.isDailyCategory || budgetStatus.todayDailyLimit > 0) {
           if (budgetStatus.isTodayOver) {
-            budgetAlert = `\n⚠️ *Batas Hari Ini (${tx.category}):* Terpakai ${formatRupiah(budgetStatus.todaySpent)} / Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} (Over ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))} hari ini. Jatah esok: ${formatRupiah(budgetStatus.nextDayAllowance)}/hari)\n`;
+            budgetAlert = `\n⚠ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)} → lebih ${formatRupiah(Math.abs(budgetStatus.todayDailyRemaining))}. Jatah besok ${formatRupiah(budgetStatus.nextDayAllowance)}/hari\n`;
           } else {
-            budgetAlert = `\n💡 *Batas Hari Ini (${tx.category}):* Jatah ${formatRupiah(budgetStatus.todayDailyLimit)} | Keluar ${formatRupiah(budgetStatus.todaySpent)} | Sisa ${formatRupiah(budgetStatus.todayDailyRemaining)} (Sisa siklus: ${formatRupiah(budgetStatus.remaining)})\n`;
+            budgetAlert = `\n▸ *Batas Hari Ini (${tx.category}):* jatah harian ${formatRupiah(budgetStatus.todayDailyLimit)}, keluar ${formatRupiah(budgetStatus.todaySpent)}, sisa ${formatRupiah(budgetStatus.todayDailyRemaining)} (Sisa siklus: ${formatRupiah(budgetStatus.remaining)})\n`;
           }
         } else if (budgetStatus.isWarning) {
-          budgetAlert = `\n⚠️ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})\n`;
+          budgetAlert = `\n⚠ *Perhatian:* Pengeluaran '${tx.category}' sudah mencapai ${budgetStatus.percentage}% dari budget siklus ini (Sisa: ${formatRupiah(budgetStatus.remaining)})\n`;
         }
       }
     }
@@ -89,19 +89,19 @@ router.post('/', async (req, res) => {
       sourceLabel = `${bankName} (Notifikasi Email)`;
     }
 
-    const icon = tx.type === 'income' ? '💰' : '💸';
+    const icon = tx.type === 'income' ? '▣' : '▣';
     const label = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
 
     // Kirim notifikasi proaktif ke WhatsApp pengguna!
     const recipient = `${userNumber}@s.whatsapp.net`;
     const notificationText =
-      `🔔 *Notifikasi Transaksi Baru Terdeteksi!*\n\n` +
-      `💳 *Sumber:* ${sourceLabel}\n` +
-      `🏪 *Tujuan / Merchant:* ${merchantName || '-'}\n` +
+      `⚑ *Notifikasi Transaksi Baru Terdeteksi!*\n\n` +
+      `▣ *Sumber:* ${sourceLabel}\n` +
+      `⌂ *Tujuan / Merchant:* ${merchantName || '-'}\n` +
       `${icon} *Nominal:* ${formatRupiah(tx.amount)} (${label})\n` +
-      `🏷️ *Kategori Kantong:* ${tx.category}\n` +
-      `📝 *Keterangan:* ${tx.description}\n` +
-      `🕒 *Waktu:* ${dayjs(tx.createdAt).format('DD/MM/YYYY HH:mm')}\n` +
+      `◆ *Kategori Kantong:* ${tx.category}\n` +
+      `✎ *Keterangan:* ${tx.description}\n` +
+      `⏰ *Waktu:* ${dayjs(tx.createdAt).format('DD/MM/YYYY HH:mm')}\n` +
       budgetAlert +
       `\n_Otomatis tercatat ke pembukuan Anda. Ketik *budget* atau *rekap* untuk melihat status saldo._`;
 

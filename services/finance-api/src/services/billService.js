@@ -15,7 +15,7 @@ const BILL_SCHEDULES = [
     name: 'WiFi (Internet Rumah)',
     dueDay: 27,
     category: 'Listrik, Air & Wifi',
-    icon: '📶',
+    icon: '⌗',
     note: 'Jatuh tempo akhir bulan agar koneksi internet tetap lancar',
     exampleCmd: 'wifi 350rb',
   },
@@ -23,7 +23,7 @@ const BILL_SCHEDULES = [
     name: 'Air & Listrik (PDAM & PLN)',
     dueDay: 2,
     category: 'Listrik, Air & Wifi',
-    icon: '💡🚰',
+    icon: '▸⌗',
     note: 'Jatuh tempo awal bulan untuk token/listrik & iuran air',
     exampleCmd: 'listrik 200rb, air 100rb',
   },
@@ -230,7 +230,7 @@ async function payBill(userNumber, name) {
 }
 
 function buildDueLabel(dueDay, todayDate, daysInMonth) {
-  if (dueDay === todayDate) return ' ➔ 🚨 *HARI INI JATUH TEMPO!*';
+  if (dueDay === todayDate) return ' ➔ ⚠ *HARI INI JATUH TEMPO!*';
   if (todayDate < dueDay) {
     return ` _(sisa ${dueDay - todayDate} hari lagi)_`;
   }
@@ -247,7 +247,7 @@ async function generateBillReport(userNumber) {
 
   if (bills.length === 0) {
     return (
-      `📋 *TAGIHAN RUTIN ANDA MASIH KOSONG*\n\n` +
+      `▤ *TAGIHAN RUTIN ANDA MASIH KOSONG*\n\n` +
       `Tambahkan misalnya:\n` +
       `• \`tambah tagihan wifi 350rb tgl 27\`\n` +
       `• \`tambah tagihan listrik 200rb tgl 2\``
@@ -256,15 +256,15 @@ async function generateBillReport(userNumber) {
 
   const lines = bills.map((bill, idx) => {
     const schedule = findSchedule(bill.name);
-    const icon = (schedule && schedule.icon) || '📄';
+    const icon = (schedule && schedule.icon) || '▤';
     const statusText = buildDueLabel(bill.dueDay, todayDate, daysInMonth);
     const amountText = bill.amount > 0 ? formatRupiah(bill.amount) : '_(nominal belum diisi)_';
 
     return (
       `${idx + 1}. ${icon} *${bill.name}*${statusText}\n` +
-      `   └ 💰 *Nominal:* ${amountText}\n` +
-      `   └ 🗓️ *Jatuh Tempo:* Setiap Tanggal ${bill.dueDay}\n` +
-      `   └ 🏷️ *Kantong Anggaran:* ${bill.category}`
+      `   └ ▣ *Nominal:* ${amountText}\n` +
+      `   └ ⏰ *Jatuh Tempo:* Setiap Tanggal ${bill.dueDay}\n` +
+      `   └ ◆ *Kantong Anggaran:* ${bill.category}`
     );
   });
 
@@ -275,16 +275,16 @@ async function generateBillReport(userNumber) {
   const belumDiisi = bills.filter((b) => !(b.amount > 0));
 
   return (
-    `📋 *DAFTAR TAGIHAN RUTIN ANDA*\n\n` +
+    `▤ *DAFTAR TAGIHAN RUTIN ANDA*\n\n` +
     lines.join('\n\n') +
     `\n\n═══════════════════════\n` +
-    `💰 *Total Tagihan Bernominal:* ${formatRupiah(totalFixed)}\n` +
+    `▣ *Total Tagihan Bernominal:* ${formatRupiah(totalFixed)}\n` +
     (belumDiisi.length > 0
-      ? `📝 *Belum ada nominal:* ${belumDiisi.map((b) => b.name).join(', ')}\n`
+      ? `✎ *Belum ada nominal:* ${belumDiisi.map((b) => b.name).join(', ')}\n`
       : '') +
-    `\n🤖 *Sistem Pengingat Otomatis:*\n` +
+    `\n⚙ *Sistem Pengingat Otomatis:*\n` +
     `• Bot otomatis mengirimkan pengingat jam 09:00 pada H-1 dan hari jatuh tempo.\n\n` +
-    `💡 *Perintah Cepat:*\n` +
+    `▸ *Perintah Cepat:*\n` +
     `• Ubah nominal/jadwal: \`tambah tagihan wifi 350rb tgl 27\`\n` +
     `• Tandai sudah dibayar: \`bayar tagihan wifi\`\n` +
     `• Hapus dari daftar: \`hapus tagihan wifi\``

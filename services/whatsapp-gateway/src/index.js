@@ -112,7 +112,7 @@ app.get(['/', '/qr'], (req, res) => {
 <body>
 
   <div class="card">
-    <h1>🤖 Catat Duit WhatsApp</h1>
+    <h1>⚙ Catat Duit WhatsApp</h1>
     <p class="desc">Hubungkan akun WhatsApp Bot Anda</p>
     
     <div id="statusBadge" class="badge-status badge-waiting">
@@ -121,7 +121,7 @@ app.get(['/', '/qr'], (req, res) => {
 
     <!-- Tampilan Jika Sudah Terhubung -->
     <div id="connectedView" style="display: none;">
-      <div style="font-size: 50px; margin-bottom: 16px;">🎉</div>
+      <div style="font-size: 50px; margin-bottom: 16px;">★</div>
       <h2 style="color: #22c55e; margin-bottom: 8px;">WhatsApp Berhasil Terhubung!</h2>
       <p style="color: #8696a0; font-size: 14px; margin-bottom: 16px;">Bot aktif dan siap menerima perintah pencatatan pengeluaran.</p>
       <div style="background: #202c33; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 14px;">
@@ -132,8 +132,8 @@ app.get(['/', '/qr'], (req, res) => {
     <!-- Tampilan Form Sambungan -->
     <div id="connectView">
       <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('qrTab')">📷 Scan QR Code</button>
-        <button class="tab-btn" onclick="switchTab('pairTab')">🔢 Kode Pairing (8 Digit)</button>
+        <button class="tab-btn active" onclick="switchTab('qrTab')">▤ Scan QR Code</button>
+        <button class="tab-btn" onclick="switchTab('pairTab')">⌗ Kode Pairing (8 Digit)</button>
       </div>
 
       <!-- TAB 1: QR CODE -->

@@ -304,6 +304,44 @@ it('typo "internat 100rb" tetap masuk Kuota & Internet', () => {
   assert.strictEqual(r.items[0].category, 'Kuota & Internet');
 });
 
+// --- teks balasan: wajib bebas emoji 4-byte (non-BMP) ---
+it('REGRESI: tidak ada emoji non-BMP di seluruh sumber balasan', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const akar = path.join(__dirname, '..', 'src');
+  const berkas = [];
+  const telusuri = (dir) => {
+    for (const isi of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, isi.name);
+      if (isi.isDirectory()) telusuri(p);
+      else if (p.endsWith('.js')) berkas.push(p);
+    }
+  };
+  telusuri(akar);
+  const nakal = [];
+  for (const p of berkas) {
+    const teks = fs.readFileSync(p, 'utf8');
+    for (const ch of teks) {
+      if (ch.codePointAt(0) > 0xFFFF) {
+        nakal.push(path.basename(p) + ': ' + JSON.stringify(ch));
+        break;
+      }
+    }
+  }
+  assert.deepStrictEqual(nakal, [], 'emoji 4 byte rawan tampil sebagai "??": ' + nakal.join(', '));
+});
+
+it('sanitizeOutgoingText: emoji 4 byte dan surrogate yatim dibersihkan', () => {
+  const { sanitizeOutgoingText } = require('../src/services/textSafety');
+  const pintu = '\u{1F6D2} *BELANJA*';
+  const bersih = sanitizeOutgoingText(pintu);
+  assert.ok(!/\u{10000}-\u{10FFFF}/u.test(bersih));
+  assert.strictEqual(bersih, '\u25A3 *BELANJA*');
+  const yatim = 'x' + String.fromCharCode(0xD83D) + 'y';
+  assert.strictEqual(sanitizeOutgoingText(yatim), 'xy');
+  assert.strictEqual(sanitizeOutgoingText(null), '');
+});
+
 // --- runner ---
 let failed = 0;
 for (const c of cases) {

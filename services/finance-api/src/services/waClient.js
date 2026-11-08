@@ -1,8 +1,11 @@
+const { sanitizeOutgoingText } = require('./textSafety');
+
 const WHATSAPP_GATEWAY_URL =
   process.env.WHATSAPP_GATEWAY_URL || 'http://whatsapp-gateway:3001';
 
 async function sendWhatsAppMessage(to, text) {
   try {
+    text = sanitizeOutgoingText(text);
     const res = await fetch(`${WHATSAPP_GATEWAY_URL}/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,7 +23,7 @@ async function sendWhatsAppDocument(to, filePath, fileName, caption = '') {
     const res = await fetch(`${WHATSAPP_GATEWAY_URL}/send-document`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, filePath, fileName, caption }),
+      body: JSON.stringify({ to, filePath, fileName, caption: sanitizeOutgoingText(caption) }),
     });
     return await res.json();
   } catch (err) {

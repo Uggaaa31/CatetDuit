@@ -26,12 +26,30 @@ def clean_html(html_content: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
+EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FAFF"  # emoji 4 byte (paling rawan rusak)
+    "\u2190-\u21FF"          # panah
+    "\u2300-\u23FF"          # simbol teknis
+    "\u25A0-\u25FF"          # bentuk geometris
+    "\u2600-\u27BF"          # simbol & dingbat
+    "\u2B00-\u2BFF"          # tanda tambahan
+    "\uFE0F\u200D\u20E3"     # variation selector, joiner, keycap
+    "]"
+)
+
+
+def bersihkan_emoji(teks: str) -> str:
+    """Buang emoji/simbol bawaan bank agar keterangan tetap rapi saat dikirim ke WhatsApp."""
+    return EMOJI_RE.sub("", teks or "").strip()
+
+
 def parse_bank_jago(subject: str, body: str, sender: str) -> dict:
     """
     Parser khusus untuk notifikasi transaksi dari Bank Jago (noreply@jago.com).
     Mendukung pembayaran QRIS/Merchant, Transfer, Bayar Tagihan, Top Up, dan Uang Masuk.
     """
-    subject_clean = subject.replace("💸", "").strip()
+    subject_clean = bersihkan_emoji(subject)
     tx_type = "expense"
     merchant = "Merchant Jago"
     description = subject_clean
@@ -130,14 +148,14 @@ def extract_merchant(text: str, subject: str) -> str:
     for p in merchant_patterns:
         m = re.search(p, subject, re.IGNORECASE)
         if m:
-            clean = m.group(1).split("\n")[0].replace("💸", "").strip()
+            clean = bersihkan_emoji(m.group(1).split("\n")[0])
             if len(clean) > 2:
                 return clean
 
     for p in merchant_patterns:
         m = re.search(p, text, re.IGNORECASE)
         if m:
-            clean = m.group(1).split("\n")[0].replace("💸", "").strip()
+            clean = bersihkan_emoji(m.group(1).split("\n")[0])
             if len(clean) > 2:
                 return clean
 
@@ -236,7 +254,7 @@ def main():
     logger.info("Memulai service Email Watcher...")
 
     if not IMAP_USER or not IMAP_PASSWORD:
-        logger.warning("⚠️ IMAP_USER atau IMAP_PASSWORD belum disetel di .env.")
+        logger.warning("⚠ IMAP_USER atau IMAP_PASSWORD belum disetel di .env.")
         logger.warning("Fitur email watcher akan standby. Anda dapat mengisinya nanti jika ingin membaca email otomatis.")
         while True:
             time.sleep(60)
