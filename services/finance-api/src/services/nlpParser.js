@@ -1,5 +1,7 @@
 // Parser Bahasa Alami untuk Format Pencatatan Keuangan via WhatsApp
 
+const { fuzzyLookup } = require('./textMatch');
+
 const CATEGORY_KEYWORDS = {
   'Makanan & Minuman': [
     // Kata umum makan & minum
@@ -179,6 +181,34 @@ function detectCategory(text, type = 'expense', amount = 0) {
 
   if (bestMatchCategory) {
     return bestMatchCategory;
+  }
+
+  // 1b. Toleransi salah ketik / singkatan: "bnsin" -> Bensin & Transportasi,
+  //     "internat" -> Kuota & Internet, "mkan siang" -> Makanan & Minuman.
+  //     Hanya untuk kata yang cukup panjang supaya tidak salah tebak.
+  const fuzzyCandidates = [];
+  // Kata umum yang terlalu lemah untuk dijadikan patokan typo (mis. "paket", "beli").
+  const WEAK_WORDS = new Set(['paket', 'beli', 'isi', 'uang', 'dana', 'dompet', 'kantong', 'jatah', 'pos', 'orang', 'sama']);
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const kw of keywords) {
+      const phrase = kw.trim();
+      if (phrase.length >= 4 && (!phrase.includes(' ') || phrase.length >= 7)) {
+        fuzzyCandidates.push({ phrase, value: category });
+      }
+      // Kata tunggal dari frasa panjang juga didaftarkan supaya typo pada satu kata
+      // tetap terbaca: "internat" -> "internet" (Kuota & Internet).
+      if (phrase.includes(' ')) {
+        for (const word of phrase.split(/\s+/)) {
+          if (word.length >= 5 && !WEAK_WORDS.has(word)) {
+            fuzzyCandidates.push({ phrase: word, value: category });
+          }
+        }
+      }
+    }
+  }
+  const fuzzyHit = fuzzyLookup(lower, fuzzyCandidates, { minScore: 0.8, minLen: 4 });
+  if (fuzzyHit) {
+    return fuzzyHit.value;
   }
 
   // 2. Heuristic Rules (Karakteristik kata bahasa Indonesia)
@@ -779,6 +809,46 @@ s = s.trim();
 return s || null;
 }
 
+// --- Definisi alias pribadi (kind: 'text') ---------------------------------
+// Bentuk eksplisit: "kalau aku bilang goceng maksudnya 5000" /
+// "atur alias goceng jadi 5000". Sengaja TIDAK menerima bentuk polos
+// "X maksudnya Y" supaya tidak membajak ralat percakapan ("bakso maksudnya 30rb").
+const ALIAS_DEF_PREFIX = /^(?:kalau\s+)?(?:(?:aku|saya|gw|gue)\s+)?(?:bilang|ketik|tulis)\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:maksudnya|artinya|berarti)\s+(.{2,80})$/i;
+const ALIAS_DEF_CMD = /^(?:atur|set|bikin)\s+alias\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:jadi|ke|=)\s+(.{2,80})$/i;
+
+function parseAliasDefinition(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const cmd = raw.match(ALIAS_DEF_CMD);
+  if (cmd) {
+    return {
+      isCommand: true,
+      action: 'add_rule',
+      kind: 'text',
+      keyword: cmd[1].trim(),
+      categoryInput: cmd[2].trim(),
+    };
+  }
+
+  const pref = raw.match(ALIAS_DEF_PREFIX);
+  if (pref) {
+    return {
+      isCommand: true,
+      action: 'add_rule',
+      kind: 'text',
+      keyword: pref[1].trim(),
+      categoryInput: pref[2].trim(),
+    };
+  }
+
+  return null;
+}
+
+function isAliasDefinition(text) {
+  return Boolean(parseAliasDefinition(text));
+}
+
 function parseConversationalEdit(rawText) {
 if (!rawText || typeof rawText !== 'string') return null;
 const text = rawText.trim();
@@ -1039,9 +1109,104 @@ function parseCrossPocketSubsidy(rawText) {
 /**
  * Parse pesan WhatsApp
  */
+/**
+ * Bungkus parseMessageInner: kode rujukan transaksi (mis. "#a1b2c3") boleh
+ * ditempel di pesan mana pun. Kode dipisahkan dulu agar pola perintah/ralat
+ * tetap dikenali, lalu dikembalikan sebagai `refCode` pada hasil parse.
+ */
+// --- Multi-aksi satu pesan --------------------------------------------------
+// "catat bensin 50rb, hapus parkir tadi, terus cek jatah makan"
+// Hanya dipecah kalau ADA perintah di antara klausa; daftar item biasa
+// ("makan 25rb, es teh 5rb") tetap dicatat sebagai satu transaksi multi-item.
+const MULTI_ACTION_SPLIT =
+  /\s*(?:,|;|\+|\blalu\b|\bterus\b|\btrus\b|\bkemudian\b|\bsetelah\s+itu\b|\babis\s+itu\b|\bdan\s+juga\b|\bterus\s+juga\b)\s*/i;
+
+function splitActionClauses(rawText) {
+  return String(rawText || '')
+    .split(MULTI_ACTION_SPLIT)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/**
+ * Deteksi beberapa aksi dalam satu pesan.
+ * return null kalau pesan bukan multi-aksi (biar alur normal tak terganggu).
+ */
+function parseMultiAction(rawText) {
+  const raw = String(rawText || '').trim();
+  if (!raw) return null;
+
+  const clauses = splitActionClauses(raw);
+  if (clauses.length < 2) return null;
+
+  const parsed = clauses.map((clause) => {
+    let hasil = null;
+    try {
+      hasil = parseMessageInner(clause);
+    } catch (err) {
+      hasil = null;
+    }
+    return { clause, hasil };
+  });
+
+  const adaPerintah = parsed.some((p) => p.hasil && p.hasil.isCommand);
+  if (!adaPerintah) return null; // daftar item biasa -> jalur lama
+
+  const berguna = parsed.filter((p) => p.hasil && (p.hasil.isCommand || p.hasil.isTransaction));
+  if (berguna.length < 2) return null;
+  if (berguna.length !== parsed.length) return null; // ada klausa yang tak bisa diurai
+
+  return {
+    isMultiAction: true,
+    clauses: berguna.map((p) => p.clause),
+    labels: berguna.map((p) => describeAction(p.hasil, p.clause)),
+  };
+}
+
+function describeAction(hasil, clause) {
+  if (!hasil) return clause;
+  switch (hasil.action) {
+    case 'undo': return 'batalkan transaksi';
+    case 'today_budget': return `cek jatah ${hasil.categoryInput || 'harian'}`;
+    case 'set_budget': return `set budget ${hasil.categoryInput}`;
+    case 'rekap': return 'rekap';
+    case 'export': return 'export excel';
+    case 'conversational_edit': return `ralat ${hasil.targetKeyword || 'transaksi terakhir'}`;
+    case 'add_rule': return 'simpan aturan';
+    case 'cross_pocket': return 'subsidi silang kantong';
+    default: break;
+  }
+  if (hasil.isTransaction && Array.isArray(hasil.items) && hasil.items.length > 0) {
+    const it = hasil.items[0];
+    const nama = String(it.description || 'transaksi').replace(/^(?:tolong\s+)?(?:catat|catet|nyatat|catatkan)\s+/i, '').trim();
+    return `catat ${nama} Rp ${Number(it.amount || 0).toLocaleString('id-ID')}`;
+  }
+  return clause;
+}
+
 function parseMessage(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
-  const text = rawText.trim();
+  const raw = rawText.trim();
+  if (!raw) return null;
+
+  const refMatch = raw.match(/#([a-z0-9]{3,12})\b/i);
+  const refCode = refMatch ? refMatch[1].toLowerCase() : null;
+  const text = refMatch
+    ? raw.replace(refMatch[0], ' ').replace(/\s+/g, ' ').trim()
+    : raw;
+
+  const multi = parseMultiAction(text);
+  if (multi) {
+    if (refCode) multi.refCode = refCode;
+    return multi;
+  }
+
+  const result = text ? parseMessageInner(text) : null;
+  if (result && refCode) result.refCode = refCode;
+  return result;
+}
+
+function parseMessageInner(text) {
   const lower = text.toLowerCase();
 
   // 0a. Cek Pergeseran Anggaran Antar Kantong (Pocket Shift)
@@ -1094,13 +1259,18 @@ function parseMessage(rawText) {
   }
 
   // Pola spesifik kategori: "jatah makan hari ini", "sisa rokok hari ini", "budget ngopi hari ini"
+  // Toleran gaya santai: "cek jatah makan", "jatah bensin", "sisa kuota internet".
   if (countNominals(text) === 0) {
     const todayCatMatch =
-      text.match(/^(?:cek\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+(.+?)\s+hari\s+ini$/i) ||
-      text.match(/^(?:cek\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+hari\s+ini\s+(.+)$/i);
+      text.match(/^(?:cek\s+|lihat\s+|berapa\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+(.+?)\s+hari\s+ini$/i) ||
+      text.match(/^(?:cek\s+|lihat\s+|berapa\s+)?(?:jatah|sisa|budget|kuota|anggaran)\s+hari\s+ini\s+(.+)$/i) ||
+      text.match(/^(?:cek|lihat|berapa)\s+(?:jatah|sisa|budget|kuota|anggaran)\s+(.+)$/i) ||
+      text.match(/^(?:jatah|kuota|anggaran)\s+([a-z][a-z0-9 &]{2,30})$/i);
     if (todayCatMatch) {
       const candidateCat = todayCatMatch[1].trim();
-      return { isCommand: true, action: 'today_budget', categoryInput: candidateCat };
+      if (!/^hari\s+ini$/i.test(candidateCat)) {
+        return { isCommand: true, action: 'today_budget', categoryInput: candidateCat };
+      }
     }
   }
 
@@ -1182,6 +1352,14 @@ function parseMessage(rawText) {
     lower === 'lanjut restart'
   ) {
     return { isCommand: true, action: 'confirm_reset_all_data' };
+  }
+
+  // Prioritas: definisi ALIAS pribadi ("kalau aku bilang goceng maksudnya 5000")
+  // harus dicek sebelum ralat percakapan, sebab kata "maksudnya" dipakai keduanya.
+  const aliasDefText = text.replace(/\s+(?:ya|dong|deh|sih|oke|ok)$/i, '').trim();
+  if (isAliasDefinition(aliasDefText)) {
+    const aliasDef = parseAliasDefinition(aliasDefText);
+    if (aliasDef) return aliasDef;
   }
 
   // Ralat Percakapan Alami (Conversational Edit / Patch)
@@ -1348,6 +1526,24 @@ function parseMessage(rawText) {
     };
   }
 
+  // Alias teks: "kalau aku bilang goceng maksudnya 5000"
+  const aliasA = ruleText.match(
+    /^(?:kalau\s+)?(?:(?:aku|saya|gw|gue)\s+)?(?:bilang|ketik|tulis)\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:maksudnya|artinya|berarti|itu)\s+(.{2,80})$/i
+  );
+  const aliasB = ruleText.match(
+    /^(?:atur|set|bikin)\s+alias\s+([a-zA-Z0-9][a-zA-Z0-9 ]{1,29}?)\s+(?:jadi|ke|=)\s+(.{2,80})$/i
+  );
+  const aliasMatch = aliasA || aliasB;
+  if (aliasMatch) {
+    return {
+      isCommand: true,
+      action: 'add_rule',
+      kind: 'text',
+      keyword: aliasMatch[1].trim(),
+      categoryInput: aliasMatch[2].trim(),
+    };
+  }
+
   if (/^(?:insight|insight mingguan|simulasi insight|tes insight)$/i.test(ruleText)) {
     return { isCommand: true, action: 'trigger_weekly_insight' };
   }
@@ -1423,5 +1619,8 @@ module.exports = {
   parsePocketShift,
   parseConversationalEdit,
   parseCrossPocketSubsidy,
+  parseMultiAction,
+  splitActionClauses,
+  parseAliasDefinition,
 };
 

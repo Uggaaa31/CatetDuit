@@ -216,6 +216,94 @@ it('subsidi silang kantong (cross-pocket funding) dikenali', () => {
   assert.ok(parseMessage('pindah 800rb ke seabank').isTransfer);
 });
 
+// --- alias pribadi (kind: 'text') ---
+it('alias nominal: "kalau aku bilang goceng maksudnya 5000"', () => {
+  const r = parseMessage('kalau aku bilang goceng maksudnya 5000');
+  assert.strictEqual(r.action, 'add_rule');
+  assert.strictEqual(r.kind, 'text');
+  assert.strictEqual(r.keyword, 'goceng');
+  assert.strictEqual(r.categoryInput, '5000');
+});
+
+it('alias singkat: "atur alias brg jadi bensin"', () => {
+  const r = parseMessage('atur alias brg jadi bensin');
+  assert.strictEqual(r.action, 'add_rule');
+  assert.strictEqual(r.kind, 'text');
+  assert.strictEqual(r.keyword, 'brg');
+});
+
+it('REGRESI: "bakso maksudnya 30rb" tetap ralat percakapan, bukan alias', () => {
+  const r = parseMessage('bakso maksudnya 30rb');
+  assert.strictEqual(r.action, 'conversational_edit');
+  assert.strictEqual(r.newAmount, 30000);
+});
+
+it('REGRESI: "eh salah, seharusnya 35rb" tetap ralat percakapan', () => {
+  const r = parseMessage('eh salah, seharusnya 35rb');
+  assert.strictEqual(r.action, 'conversational_edit');
+  assert.strictEqual(r.newAmount, 35000);
+});
+
+// --- multi-aksi satu pesan ---
+it('multi-aksi: 3 aksi dalam satu pesan dipecah', () => {
+  const r = parseMessage('catat bensin 50rb, hapus parkir tadi, terus cek jatah makan');
+  assert.strictEqual(r.isMultiAction, true);
+  assert.strictEqual(r.clauses.length, 3);
+  assert.strictEqual(r.clauses[0], 'catat bensin 50rb');
+  assert.strictEqual(r.labels[1], 'ralat parkir');
+});
+
+it('multi-aksi: "set budget bensin 250rb, terus beli kuota 100rb"', () => {
+  const r = parseMessage('set budget bensin 250rb, terus beli kuota 100rb');
+  assert.strictEqual(r.isMultiAction, true);
+  assert.strictEqual(r.clauses.length, 2);
+});
+
+it('REGRESI: daftar item biasa bukan multi-aksi', () => {
+  const r = parseMessage('makan 25rb, es teh 5rb');
+  assert.strictEqual(r.isTransaction, true);
+  assert.strictEqual(r.items.length, 2);
+  assert.ok(!r.isMultiAction);
+});
+
+// --- kode rujukan transaksi (#xxxxxx) ---
+it('kode ref dipisah dari pesan dan tetap dikenali sebagai ralat', () => {
+  const r = parseMessage('eh salah, nominalnya 20rb #a1b2c3');
+  assert.strictEqual(r.action, 'conversational_edit');
+  assert.strictEqual(r.refCode, 'a1b2c3');
+  assert.strictEqual(r.newAmount, 20000);
+});
+
+it('kode ref pada perintah batal tidak merusak perintah', () => {
+  const r = parseMessage('batal #887777');
+  assert.strictEqual(r.action, 'undo');
+  assert.strictEqual(r.refCode, '887777');
+});
+
+// --- jatah harian gaya santai & toleransi typo ---
+it('"cek jatah makan" dikenali sebagai cek jatah kategori', () => {
+  const r = parseMessage('cek jatah makan');
+  assert.strictEqual(r.action, 'today_budget');
+  assert.strictEqual(r.categoryInput, 'makan');
+});
+
+it('"cek jatah bensin" dikenali sebagai cek jatah kategori', () => {
+  const r = parseMessage('cek jatah bensin');
+  assert.strictEqual(r.action, 'today_budget');
+  assert.strictEqual(r.categoryInput, 'bensin');
+});
+
+it('typo "bnsin 50rb" tetap masuk Bensin & Transportasi', () => {
+  const r = parseMessage('bnsin 50rb');
+  assert.strictEqual(r.isTransaction, true);
+  assert.strictEqual(r.items[0].category, 'Bensin & Transportasi');
+});
+
+it('typo "internat 100rb" tetap masuk Kuota & Internet', () => {
+  const r = parseMessage('internat 100rb');
+  assert.strictEqual(r.items[0].category, 'Kuota & Internet');
+});
+
 // --- runner ---
 let failed = 0;
 for (const c of cases) {

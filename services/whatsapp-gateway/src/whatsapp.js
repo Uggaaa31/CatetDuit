@@ -40,6 +40,26 @@ const FINANCE_API_URL = process.env.FINANCE_API_URL || 'http://finance-api:3000'
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
+// Tarik teks dari isi pesan apa pun (termasuk pesan yang kita kirim sendiri).
+// Dipakai untuk membaca pesan yang sedang dibalas (quote/reply).
+function extractMessageText(content) {
+  if (!content) return '';
+  if (typeof content === 'string') return content.trim();
+
+  if (content.conversation) return String(content.conversation).trim();
+  if (content.extendedTextMessage?.text) return String(content.extendedTextMessage.text).trim();
+  if (content.imageMessage?.caption) return String(content.imageMessage.caption).trim();
+  if (content.documentMessage?.caption) return String(content.documentMessage.caption).trim();
+  // Pesan berlapis (sekali lihat / sementara / dokumen berketerangan)
+  if (content.viewOnceMessage?.message) return extractMessageText(content.viewOnceMessage.message);
+  if (content.viewOnceMessageV2?.message) return extractMessageText(content.viewOnceMessageV2.message);
+  if (content.ephemeralMessage?.message) return extractMessageText(content.ephemeralMessage.message);
+  if (content.documentWithCaptionMessage?.message) {
+    return extractMessageText(content.documentWithCaptionMessage.message);
+  }
+  return '';
+}
+
 // Normalisasi nomor: 08xxx -> 62xxx supaya format .env tidak harus seragam.
 function normalizeNumber(value) {
   const clean = String(value || '').replace(/[^0-9]/g, '');
@@ -201,6 +221,7 @@ async function connectToWhatsApp() {
         let text = '';
         let hasImage = false;
         let imageFilePath = null;
+        let quoted = null;
 
         if (messageContent.conversation) {
           text = messageContent.conversation.trim();
@@ -232,7 +253,33 @@ async function connectToWhatsApp() {
 
         if (!text && !hasImage) continue;
 
+        // Deteksi pesan yang sedang dibalas (quote/reply).
+        // Berguna untuk meralat transaksi tertentu: user cukup balas pesan konfirmasi bot.
+        const contextInfo =
+          messageContent.extendedTextMessage?.contextInfo ||
+          messageContent.imageMessage?.contextInfo ||
+          messageContent.videoMessage?.contextInfo ||
+          null;
+
+        if (contextInfo?.stanzaId) {
+          // Isi pesan yang dikutip biasanya sudah disertakan; kalau tidak, ambil dari
+          // cache pesan yang sudah kita simpan (termasuk pesan yang kita kirim sendiri).
+          const quotedText =
+            extractMessageText(contextInfo.quotedMessage) ||
+            extractMessageText(messageStore.get(contextInfo.stanzaId)) ||
+            '';
+
+          quoted = {
+            id: contextInfo.stanzaId,
+            participant: contextInfo.participant || null,
+            text: quotedText,
+          };
+        }
+
         console.log(`Menerima pesan dari ${sender}: "${text}" (Gambar: ${hasImage})`);
+        if (quoted) {
+          console.log(`   ↳ Membalas pesan ${quoted.id}${quoted.text ? `: "${quoted.text.slice(0, 80)}"` : ' (isi tidak terbaca)'}`);
+        }
 
         // Forward to finance-api webhook
         await fetch(`${FINANCE_API_URL}/bot/webhook`, {
@@ -244,6 +291,8 @@ async function connectToWhatsApp() {
             text,
             hasImage,
             imageFilePath,
+            messageId: msg.key.id || null,
+            quoted,
             timestamp: msg.messageTimestamp,
           }),
         }).catch((err) => {

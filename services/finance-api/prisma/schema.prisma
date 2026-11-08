@@ -81,12 +81,15 @@ model ChatMessage {
   @@index([userNumber, createdAt])
 }
 
-// Aturan kategori pribadi: "kalau aku bilang ngopi masuk nongkrong".
+// Aturan pribadi per pengguna.
+//   kind = "category" -> "kalau aku bilang ngopi masuk nongkrong" (kata kunci -> kantong)
+//   kind = "text"     -> "kalau aku bilang goceng maksudnya 5000" (alias teks/nominal/merchant)
 model UserRule {
   id         String   @id @default(uuid())
   userNumber String
   keyword    String
   category   String
+  kind       String   @default("category")
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

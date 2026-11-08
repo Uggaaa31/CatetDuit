@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../db');
-const { parseMessage, isConversationalText, detectCategory, countNominals } = require('../services/nlpParser');
+const { parseMessage, isConversationalText, detectCategory, countNominals, parseMultiAction } = require('../services/nlpParser');
 const { sendWhatsAppMessage, sendWhatsAppDocument } = require('../services/waClient');
 const { extractReceiptData, parseChatWithAI } = require('../services/ocrClient');
 const { generateFinancialExcel } = require('../services/excelService');
@@ -47,7 +47,7 @@ const {
   hasPendingClarification,
 } = require('../services/chatMemory');
 const { buildFacts } = require('../services/financeFacts');
-const { addRule, listRules, removeRule, applyRules, formatRuleList } = require('../services/ruleService');
+const { addRule, listRules, removeRule, applyRules, applyTextAliases, formatRuleList } = require('../services/ruleService');
 
 // Map untuk konfirmasi 2 langkah perintah berbahaya (TTL 60 detik)
 const pendingRestarts = new Map();
@@ -58,6 +58,90 @@ function formatRupiah(number) {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(number);
+}
+
+// ---------------------------------------------------------------------------
+// Kode rujukan transaksi (ref).
+//
+// Setiap konfirmasi transaksi menyertakan kode pendek seperti "#a1b2c3". User
+// bisa memakai kode itu untuk menunjuk transaksi tertentu, baik dengan membalas
+// (reply/quote) pesan konfirmasi bot maupun dengan mengetik kodenya langsung:
+//   "ubah nominal 30rb #a1b2c3"  /  balas pesan konfirmasi lalu: "salah, 30rb"
+// ---------------------------------------------------------------------------
+function refCode(id) {
+  const clean = String(id || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return clean.length >= 6 ? `#${clean.slice(-6)}` : `#${clean}`;
+}
+
+function refTag(id) {
+  return `🔖 ${refCode(id)}`;
+}
+
+function extractRefCode(text) {
+  const match = String(text || '').match(/#([a-z0-9]{3,12})\b/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+async function findTransactionByRef(userNumber, code) {
+  if (!code) return null;
+  const recent = await prisma.transaction.findMany({
+    where: { userNumber },
+    orderBy: { createdAt: 'desc' },
+    take: 60,
+  });
+  const needle = String(code).toLowerCase();
+  return (
+    recent.find((tx) =>
+      String(tx.id || '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toLowerCase()
+        .endsWith(needle)
+    ) || null
+  );
+}
+
+/**
+ * Cari transaksi yang dimaksud dari kode ref atau dari pesan yang dibalas.
+ * Urutan prioritas:
+ *   1. Kode ref di pesan user         -> "ubah nominal 30rb #a1b2c3"
+ *   2. Kode ref di pesan yang dibalas -> user membalas pesan konfirmasi bot
+ *   3. Nominal di pesan yang dibalas  -> konfirmasi lama tanpa kode ref
+ */
+async function resolveReferencedTransaction(userNumber, refCodeInput, quoted) {
+  // Terima kode polos ("a1b2c3") maupun teks pesan yang memuat kode ("...#a1b2c3").
+  const raw = refCodeInput ? String(refCodeInput).trim() : '';
+  const explicit = /^[a-z0-9]{4,12}$/i.test(raw) ? raw.toLowerCase() : extractRefCode(raw);
+  if (explicit) {
+    const tx = await findTransactionByRef(userNumber, explicit);
+    if (tx) return { tx, via: 'kode ref' };
+  }
+
+  const quotedText = quoted && typeof quoted.text === 'string' ? quoted.text : '';
+  const quotedRef = extractRefCode(quotedText);
+  if (quotedRef) {
+    const tx = await findTransactionByRef(userNumber, quotedRef);
+    if (tx) return { tx, via: 'pesan yang Anda balas' };
+  }
+
+  if (quotedText) {
+    const amountMatch =
+      quotedText.match(/(?:nominal|total)[^0-9]{0,12}([0-9][0-9.]*)/i) ||
+      quotedText.match(/Rp\s?([0-9][0-9.]*)/i);
+    if (amountMatch) {
+      const amount = parseInt(String(amountMatch[1]).replace(/\./g, ''), 10);
+      if (amount > 0) {
+        const recent = await prisma.transaction.findMany({
+          where: { userNumber },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        });
+        const tx = recent.find((t) => Math.abs(Number(t.amount) - amount) < 1);
+        if (tx) return { tx, via: 'nominal di pesan yang Anda balas' };
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseSearchQuery(query) {
@@ -255,9 +339,10 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
   // Kasus B: split dua transaksi (kantong utama + kantong penambal)
   const primaryAmount = itemAvailable;
   const subsidyAmount = shortfall;
+  let primaryTx = null;
 
   if (primaryAmount > 0) {
-    await prisma.transaction.create({
+    primaryTx = await prisma.transaction.create({
       data: {
         userNumber,
         type: 'expense',
@@ -269,7 +354,7 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
     });
   }
 
-  await prisma.transaction.create({
+  const subsidyTx = await prisma.transaction.create({
     data: {
       userNumber,
       type: 'expense',
@@ -297,11 +382,11 @@ async function executeCrossPocketOperation(userNumber, from, pocketData) {
     `• 💰 Total Belanja: *${formatRupiah(amount)}*\n\n` +
     `🏷️ *Rincian Pemotongan:*\n` +
     (primaryAmount > 0
-      ? `1. ${itemCategory}: *${formatRupiah(primaryAmount)}* (menghabiskan sisa kuota kantong ini)\n` +
+      ? `1. ${itemCategory}: *${formatRupiah(primaryAmount)}* (menghabiskan sisa kuota kantong ini)${primaryTx ? ` · ${refCode(primaryTx.id)}` : ''}\n` +
         `   └ Sisa kuota sekarang: ${formatRupiah(itemAfter.remaining)}\n` +
         (dailyBlock(itemAfter) ? dailyBlock(itemAfter) + '\n' : '') +
-        `2. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (ditambal dari kantong ini)\n`
-      : `1. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (kantong utama kosong, seluruhnya ditambal dari sini)\n`) +
+        `2. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (ditambal dari kantong ini) · ${refCode(subsidyTx.id)}\n`
+      : `1. ${donorCategory}: *${formatRupiah(subsidyAmount)}* (kantong utama kosong, seluruhnya ditambal dari sini) · ${refCode(subsidyTx.id)}\n`) +
     `   └ Sisa kuota sekarang: ${formatRupiah(donorAfter.remaining)}\n` +
     (dailyBlock(donorAfter) ? dailyBlock(donorAfter) + '\n' : '') +
     `\n✅ Total terpotong: ${formatRupiah(primaryAmount + subsidyAmount)} (cocok dengan total belanja)\n` +
@@ -418,6 +503,7 @@ async function executeTransferOperation(userNumber, from, transferData) {
       `👤 *Tujuan:* ${person}\n` +
       `💰 *Nominal:* ${formatRupiah(tx.amount)}\n` +
       `🏷️ *Kategori:* ${tx.category}` +
+      `\n🔖 Ref: ${refCode(tx.id)}` +
       budgetNote +
       `\n\n_Kategori diisi otomatis. Kalau keliru, ketik *ubah kategori [nama]*. Ketik *batal* untuk membatalkan._`;
 
@@ -426,7 +512,7 @@ async function executeTransferOperation(userNumber, from, transferData) {
 
   // Kasus C: Alokasi ke Kantong Tertentu (Ortu, Dana Darurat, Tabungan, Makan, dll)
   const targetCategory = category || 'Belanja Bulanan';
-  await prisma.transaction.create({
+  const pocketTx = await prisma.transaction.create({
     data: {
       userNumber,
       type: 'expense',
@@ -448,6 +534,7 @@ async function executeTransferOperation(userNumber, from, transferData) {
     `🎯 *Tujuan:* ${toTarget || targetCategory}\n` +
     `💰 *Nominal:* ${formatRupiah(numAmount)}\n` +
     `🏷️ *Kategori:* ${targetCategory}\n` +
+    `🔖 Ref: ${refCode(pocketTx.id)}\n` +
     budgetNote +
     `\n\n_Ketik 'budget' untuk melihat sisa seluruh kuota anggaran._`;
 
@@ -524,7 +611,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
       reply += `\n\n${badgeText}`;
     }
 
-    reply += `\n\n_Ketik *ubah nominal [angka]*, *ubah kategori [nama]*, atau *batal* jika keliru._`;
+    reply += `\n\n🔖 Ref: ${refCode(tx.id)}\n_Ketik *ubah nominal [angka]*, *ubah kategori [nama]*, atau *batal* jika keliru. Anda juga bisa **membalas pesan ini** untuk meralat transaksi tersebut._`;
     return await sendWhatsAppMessage(from, reply);
   }
 
@@ -561,7 +648,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
   createdTxs.forEach((tx, idx) => {
     const icon = tx.type === 'income' ? '💰' : '💸';
     const merch = tx.merchantName ? ` (@${tx.merchantName})` : '';
-    itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)}\n`;
+    itemListText += `${idx + 1}. ${icon} *${tx.description}*${merch}\n   └ 🏷️ ${tx.category} — ${formatRupiah(tx.amount)} · ${refCode(tx.id)}\n`;
   });
 
   let summaryText = '';
@@ -608,7 +695,7 @@ async function executeTransactionsOperation(userNumber, from, items, sourceLabel
     ruleBlock +
     alertBlock +
     badgeBlock +
-    `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._`;
+    `\n_Ketik *batal* untuk membatalkan semua catatan ini sekaligus, atau *budget* untuk cek sisa kuota._\n_Balas pesan ini dan sebut kodenya (mis. "#a1b2c3 jadi 30rb") untuk meralat satu transaksi saja._`;
 
   return await sendWhatsAppMessage(from, reply);
 }
@@ -840,8 +927,29 @@ async function runAiBranch(userNumber, from, text, senderName) {
   return handled;
 }
 
+// Ambil fungsi handler POST /webhook dari stack router Express, supaya satu
+// pesan multi-aksi bisa dijalankan ulang lewat jalur kode yang sama persis.
+function ambilHandlerWebhook() {
+  try {
+    const layer = router.stack.find((l) => l.route && l.route.path === '/webhook');
+    if (!layer || !layer.route || !Array.isArray(layer.route.stack) || layer.route.stack.length === 0) {
+      return null;
+    }
+    const kandidat = layer.route.stack[layer.route.stack.length - 1];
+    return kandidat && typeof kandidat.handle === 'function' ? kandidat.handle : null;
+  } catch (err) {
+    console.warn('[finance-api] Tidak bisa mengambil handler webhook:', err.message);
+    return null;
+  }
+}
+
 router.post('/webhook', async (req, res) => {
-  const { from, senderName, text, hasImage, imageFilePath } = req.body;
+  const { from, senderName, text: rawText, hasImage, imageFilePath } = req.body;
+  // Pesan yang sedang dibalas user (quote/reply), dikirim oleh whatsapp-gateway.
+  const quoted =
+    req.body.quoted && typeof req.body.quoted === 'object' && req.body.quoted.id
+      ? req.body.quoted
+      : null;
   if (!from) return res.status(400).json({ error: 'Missing "from" sender' });
 
   // Acknowledge webhook immediately to avoid timeout
@@ -857,6 +965,62 @@ router.post('/webhook', async (req, res) => {
   const userNumber = getCanonicalUserNumber(from);
 
   try {
+    let text = rawText || '';
+
+    // 0. ALIAS PRIBADI: ganti dulu kata kunci pribadi sebelum pesan diurai.
+    //    Contoh: "goceng" -> "5000", "brg" -> "bensin", "warung" -> "di warung bu ida".
+    //    Dilewati pada sub-aksi multi-aksi (teksnya sudah diganti oleh induknya).
+    if (!req.body.__multiChild) {
+      const aliasResult = await applyTextAliases(userNumber, text);
+      text = aliasResult.text;
+      if (aliasResult.applied.length > 0) {
+        const detail = aliasResult.applied.map((a) => `${a.keyword} → ${a.value}`).join(', ');
+        console.log(`[finance-api] Alias pribadi diterapkan: ${detail} | pesan jadi: "${text}"`);
+      }
+    }
+
+    // 0b. MULTI-AKSI: satu pesan berisi beberapa perintah/transaksi sekaligus.
+    //     Contoh: "catat bensin 50rb, hapus parkir tadi, terus cek jatah makan"
+    if (!req.body.__multiChild) {
+      const multi = parseMultiAction(text);
+      if (multi && multi.clauses.length > 1) {
+        const subHandler = ambilHandlerWebhook();
+        if (subHandler) {
+          const daftar = multi.labels.map((label, i) => `${i + 1}. ${label}`).join('\n');
+          await sendWhatsAppMessage(
+            from,
+            `🧩 *Terbaca ${multi.clauses.length} aksi dalam satu pesan:*\n${daftar}\n\n_Saya kerjakan satu per satu, mohon tunggu sebentar._`
+          );
+
+          for (const clause of multi.clauses) {
+            try {
+              await subHandler(
+                {
+                  body: {
+                    ...req.body,
+                    text: clause,
+                    hasImage: false,
+                    imageFilePath: null,
+                    __multiChild: true,
+                  },
+                },
+                {
+                  json() { return this; },
+                  status() { return this; },
+                  setHeader() { return this; },
+                  end() { return this; },
+                }
+              );
+            } catch (err) {
+              console.error(`[finance-api] Sub-aksi "${clause}" gagal:`, err.message);
+              await sendWhatsAppMessage(from, `⚠️ Gagal mengerjakan "${clause}": ${err.message}`);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     // 1. JIKA PESAN BERUPA FOTO STRUK ATAU RESI M-BANKING
     if (hasImage && imageFilePath) {
       await sendWhatsAppMessage(
@@ -951,7 +1115,7 @@ router.post('/webhook', async (req, res) => {
             (notes ? `📝 *Berita/Keterangan:* ${notes}\n` : '') +
             `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             budgetAlert +
-            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         } else if (receiptType === 'qris') {
           reply =
             `📱 *Pembayaran QRIS Berhasil Dicatat!*\n\n` +
@@ -961,7 +1125,7 @@ router.post('/webhook', async (req, res) => {
             `🏷️ *Kategori:* ${tx.category}\n` +
             `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             budgetAlert +
-            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         } else {
           reply =
             `🧾 *Struk Belanja Berhasil Dicatat!*\n\n` +
@@ -971,7 +1135,7 @@ router.post('/webhook', async (req, res) => {
             `📅 *Tanggal:* ${date || dayjs().format('DD/MM/YYYY')}\n` +
             itemListText +
             budgetAlert +
-            `\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
+            `\n🔖 Ref: ${refCode(tx.id)}\n\n_Ketik *batal* jika ingin membatalkan catatan ini, atau *budget* untuk melihat kuota._`;
         }
 
         return await sendWhatsAppMessage(from, reply);
@@ -1011,6 +1175,8 @@ router.post('/webhook', async (req, res) => {
 • \`batalin sate tadi\` (batalkan catatan transaksi spesifik)
 • \`ubah nominal 120rb\` / \`ubah kategori bensin\`
 • \`batal\` (membatalkan transaksi terakhir)
+\`#a1b2c3 jadi 30rb\` (ralat transaksi memakai kode Ref)
+*Balas (quote) pesan konfirmasi transaksi, lalu tulis* \`salah, 30rb\` *atau* \`batalin ini\`*
 
 *4. Pindah Dana & Alokasi Rekening:*
 • \`pindah 800rb ke seabank\` (otomatis Tabungan & Darurat)
@@ -1057,7 +1223,15 @@ router.post('/webhook', async (req, res) => {
 *11. Aturan Pribadi & Insight AI:*
 • \`kalau aku bilang ngopi masuk nongkrong\` (kata kunci otomatis masuk kantong tertentu)
 • \`daftar aturan\` / \`hapus aturan ngopi\`
-• \`insight\` (AI meringkas tren & saran dari data Anda)`;
+• 
+
+*12. Fleksibel: Alias Pribadi & Multi-Aksi:*
+• \`kalau aku bilang goceng maksudnya 5000\` (alias nominal)
+• \`kalau aku bilang brg maksudnya bensin\` (alias singkatan)
+• \`kalau aku bilang warkop maksudnya di warung bu ida\` (alias merchant)
+• \`atur alias goceng jadi 5000\` (cara singkat membuat alias)
+• \`catat bensin 50rb, hapus parkir tadi, terus cek jatah makan\` (3 aksi sekaligus)
+• \`bnsin 50rb\` / \`internat 100rb\` (typo & singkatan tetap dimengerti)`;
 
         return await sendWhatsAppMessage(from, helpMessage);
       }
@@ -1191,9 +1365,17 @@ router.post('/webhook', async (req, res) => {
         }
 
         let targetTx = null;
+        let targetVia = '';
+
+        // Prioritas 0: user menunjuk transaksi tertentu lewat balasan (quote) atau kode ref.
+        const referenced = await resolveReferencedTransaction(userNumber, parsed.refCode, quoted);
+        if (referenced && referenced.tx) {
+          targetTx = referenced.tx;
+          targetVia = referenced.via;
+        }
 
         // Prioritas 1: Pencocokan berdasarkan nominal spesifik (misal: "yang 5rb tadi")
-        if (targetAmount) {
+        if (!targetTx && targetAmount) {
           targetTx = recentTxs.find((tx) => Math.abs(tx.amount - targetAmount) < 1);
         }
 
@@ -1237,7 +1419,9 @@ router.post('/webhook', async (req, res) => {
             `• 📦 Barang/Keterangan: *${targetTx.description}*\n` +
             `• 🏷️ Kategori: *${targetTx.category}*\n` +
             `• 💰 Nominal: *${formatRupiah(targetTx.amount)}*\n` +
-            `• 📅 Waktu: *${dayjs(targetTx.createdAt).format('DD/MM/YYYY HH:mm')}*` +
+            `• 📅 Waktu: *${dayjs(targetTx.createdAt).format('DD/MM/YYYY HH:mm')}*\n` +
+            `• 🔖 Ref: ${refCode(targetTx.id)}` +
+            (targetVia ? ` _(dipilih dari ${targetVia})_` : '') +
             budgetInfo +
             `\n\n_Catatan telah dihapus dari pembukuan._`;
 
@@ -1298,7 +1482,9 @@ router.post('/webhook', async (req, res) => {
           `• ${changeBullet}\n` +
           `• 📦 Barang/Keterangan: ${updatedTx.description}\n` +
           `• 🏷️ Kategori: ${updatedTx.category}\n` +
-          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}` +
+          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}\n` +
+          `• 🔖 Ref: ${refCode(updatedTx.id)}` +
+          (targetVia ? ` _(dipilih dari ${targetVia})_` : '') +
           budgetContext +
           `\n\n_Catatan sudah diperbarui otomatis._`;
 
@@ -1308,13 +1494,18 @@ router.post('/webhook', async (req, res) => {
 
       // 2g-2. QUICK EDIT TRANSAKSI TERAKHIR
       if (parsed.action === 'edit_last_tx') {
-        const lastTx = await prisma.transaction.findFirst({
-          where: { userNumber },
-          orderBy: { createdAt: 'desc' },
-        });
+        // Kalau user membalas pesan konfirmasi lama atau menulis kode ref,
+        // yang diedit adalah transaksi itu — bukan transaksi paling akhir.
+        const referencedEdit = await resolveReferencedTransaction(userNumber, parsed.refCode, quoted);
+        const lastTx =
+          (referencedEdit && referencedEdit.tx) ||
+          (await prisma.transaction.findFirst({
+            where: { userNumber },
+            orderBy: { createdAt: 'desc' },
+          }));
 
         if (!lastTx) {
-          return await sendWhatsAppMessage(from, 'ℹ️ Belum ada transaksi untuk diubah.');
+          return await sendWhatsAppMessage(from, 'i️ Belum ada transaksi untuk diubah.');
         }
 
         const { field, value } = parsed;
@@ -1363,7 +1554,9 @@ router.post('/webhook', async (req, res) => {
           `• ${changeNote}\n` +
           `• 📦 Barang/Keterangan: ${updatedTx.description}\n` +
           `• 🏷️ Kategori: ${updatedTx.category}\n` +
-          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}` +
+          `• 💰 Nominal: ${formatRupiah(updatedTx.amount)}\n` +
+          `• 🔖 Ref: ${refCode(updatedTx.id)}` +
+          (referencedEdit && referencedEdit.tx ? ` _(dipilih dari ${referencedEdit.via})_` : '') +
           budgetAlert +
           `\n\n_Ketik *batal* jika ingin membatalkan, atau *budget* untuk cek status._`;
 
@@ -1608,12 +1801,24 @@ router.post('/webhook', async (req, res) => {
       if (parsed.action === 'set_budget') {
         const input = parsed.categoryInput.toLowerCase();
         const availableCats = Object.keys(DEFAULT_BUDGETS);
-        let matchedCat = availableCats.find(
-          (c) => c.toLowerCase().includes(input) || input.includes(c.toLowerCase())
-        );
+
+        // Toleransi typo nama kantong: "bnsin" -> Bensin & Transportasi.
+        let matchedCat = matchCategory(parsed.categoryInput);
 
         if (!matchedCat) {
-          matchedCat = parsed.categoryInput;
+          matchedCat = availableCats.find(
+            (c) => c.toLowerCase().includes(input) || input.includes(c.toLowerCase())
+          );
+        }
+
+        if (!matchedCat) {
+          const catList = availableCats.map((c) => `• ${c}`).join('\n');
+          return await sendWhatsAppMessage(
+            from,
+            `⚠️ Kantong *'${parsed.categoryInput}'* tidak dikenali.\n\n` +
+              `Pilih salah satu dari ${availableCats.length} kantong resmi berikut:\n${catList}\n\n` +
+              `_Contoh: ketik *set budget bensin 250rb*_`
+          );
         }
 
         await updateCategoryBudget(userNumber, matchedCat, parsed.amount);
@@ -1639,10 +1844,23 @@ router.post('/webhook', async (req, res) => {
       }
 
       if (parsed.action === 'add_rule') {
-        const res = await addRule(userNumber, parsed.keyword, parsed.categoryInput);
+        const isAlias = parsed.kind === 'text';
+        const res = await addRule(userNumber, parsed.keyword, parsed.categoryInput, parsed.kind);
         if (!res.success) {
           return await sendWhatsAppMessage(from, `⚠️ ${res.error}`);
         }
+
+        if (isAlias) {
+          return await sendWhatsAppMessage(
+            from,
+            `${res.isNew ? '✅ *Alias Baru Disimpan!*' : '✅ *Alias Diperbarui!*'}\n\n` +
+              `• 🔑 Kata kunci: *${res.rule.keyword}*\n` +
+              `• 🔄 Diganti jadi: *${res.rule.category}*\n\n` +
+              `_Mulai sekarang setiap kali Anda menulis "${res.rule.keyword}", sistem otomatis membacanya sebagai "${res.rule.category}"._\n\n` +
+              `_Contoh: "makan ${res.rule.keyword}" → dibaca "makan ${res.rule.category}"._`
+          );
+        }
+
         return await sendWhatsAppMessage(
           from,
           `${res.isNew ? '✅ *Aturan Baru Disimpan!*' : '✅ *Aturan Diperbarui!*'}\n\n` +
@@ -1717,6 +1935,23 @@ router.post('/webhook', async (req, res) => {
 
       // 2j. BATAL / UNDO TERAKHIR (Mendukung pembatalan multi-item sekaligus)
       if (parsed.action === 'undo') {
+        // Batal bertarget: balas pesan konfirmasi tertentu, atau tulis kodenya
+        // ("batal #a1b2c3"). Hanya transaksi itu yang dihapus.
+        const referencedUndo = await resolveReferencedTransaction(userNumber, parsed.refCode, quoted);
+        if (referencedUndo && referencedUndo.tx) {
+          const tx = referencedUndo.tx;
+          await prisma.transaction.delete({ where: { id: tx.id } });
+
+          const targetedReply =
+            `🗑️ *Transaksi Dibatalkan (bertarget)!*\n\n` +
+            `• 📦 Barang/Keterangan: ${tx.description}\n` +
+            `• 🏷️ Kategori: ${tx.category}\n` +
+            `• 💰 Nominal: ${formatRupiah(tx.amount)}\n` +
+            `• 🔖 Ref: ${refCode(tx.id)} _(dipilih dari ${referencedUndo.via})_`;
+
+          return await sendWhatsAppMessage(from, targetedReply);
+        }
+
         const lastTx = await prisma.transaction.findFirst({
           where: { userNumber },
           orderBy: { createdAt: 'desc' },

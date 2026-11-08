@@ -1,5 +1,6 @@
 const prisma = require('../db');
 const dayjs = require('dayjs');
+const { fuzzyLookup } = require('./textMatch');
 
 // Total Anggaran Bulanan: Rp 4.600.000 (Gaji Tgl 21: 4,1jt + Booster Tgl 1: 500k)
 const DEFAULT_BUDGETS = {
@@ -529,6 +530,18 @@ function matchCategory(input) {
       return cat;
     }
   }
+
+  // Toleransi salah ketik & singkatan kantong: "bnsin" -> Bensin & Transportasi,
+  // "makanann" -> Makanan & Minuman, "nongkrongg" -> Nongkrong & Hiburan.
+  const fuzzy = fuzzyLookup(
+    clean,
+    [
+      ...Object.entries(aliases).map(([phrase, value]) => ({ phrase, value })),
+      ...allCats.map((cat) => ({ phrase: cat, value: cat })),
+    ],
+    { minScore: 0.8, minLen: 4 }
+  );
+  if (fuzzy) return fuzzy.value;
 
   return null;
 }
