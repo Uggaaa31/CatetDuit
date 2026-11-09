@@ -18,7 +18,7 @@ async function generateFinancialExcel(transactions, title = 'Laporan Keuangan') 
   // Title Row
   worksheet.mergeCells('A1:G1');
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = `▮ ${title.toUpperCase()}`;
+  titleCell.value = title.toUpperCase();
   titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.fill = {
     type: 'pattern',

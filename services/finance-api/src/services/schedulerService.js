@@ -184,22 +184,21 @@ async function executeSalary21(userNumber, isManual = false) {
   });
 
   const message =
-    `★ *GAJIAN UTAMA TELAH MASUK!*\n` +
-    `▣ *Nominal:* ${formatRupiah(4100000)}\n` +
-    `⏰ *${cycle.label}*\n\n` +
-    `Bot telah otomatis mencatat pemasukan Rp 4.100.000 ke pembukuan Anda.\n\n` +
-    `▤ *CHECKLIST ALOKASI HARI INI (Langsung Pisahkan!):*\n` +
-    `1. ◘ *Tabungan & Investasi:* Rp 300.000 (Pindah ke SeaBank)\n` +
-    `2. ◘ *Dana Darurat:* Rp 500.000 (Pindah ke SeaBank - Bunga Harian)\n` +
-    `3. ◇ *Kirim Keluarga:* Rp 400.000 (Dompet Bank Jago ➔ Transfer ortu)\n` +
-    `4. ▸ *Listrik, Air & Wifi:* Rp 400.000 (Dompet Bank Jago ➔ Bayar tagihan)\n` +
-    `5. ▤ *Belanja Bulanan:* Rp 400.000 (Dompet Bank Jago ➔ Sabun & sembako)\n` +
-    `6. ⌗ *Kuota & Internet:* Rp 100.000 (Dompet Bank Jago ➔ Paket data)\n` +
-    `7. ☕ *Nongkrong & Hiburan:* Rp 400.000 (Dompet Bank Jago)\n` +
-    `8. ☰ *Uang Makan (Modal Awal):* Rp 1.200.000 (Dompet Bank Jago ~Rp 50.000/hari)\n` +
-    `9. ◆ *Rokok & Vape:* Rp 400.000 (Dompet Bank Jago - Jatah 1 bulan)\n\n` +
-    `▸ *Info:* Besok (Tgl 22) jam 08:00 bot otomatis mengirimkan rincian panduan transfer ke SeaBank & Bank Jago!\n` +
-    `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
+    `🎉 *GAJI UTAMA TELAH MASUK!*\n` +
+    `• 💰 *Nominal:* ${formatRupiah(4100000)}\n` +
+    `• 🗓️ *Periode:* ${cycle.label}\n\n` +
+    `Pemasukan Rp 4.100.000 otomatis tercatat ke pembukuan.\n\n` +
+    `📋 *Checklist Alokasi Hari Ini:*\n` +
+    `1. 📈 Tabungan: Rp 300.000 (SeaBank)\n` +
+    `2. 🛡️ Dana Darurat: Rp 500.000 (SeaBank)\n` +
+    `3. 👨‍👩‍👦 Kirim Keluarga: Rp 400.000 (Jago ➔ Ortu)\n` +
+    `4. 💡 Listrik, Air & Wifi: Rp 400.000 (Jago ➔ Tagihan)\n` +
+    `5. 🛒 Belanja Bulanan: Rp 400.000 (Jago)\n` +
+    `6. 📶 Kuota & Internet: Rp 100.000 (Jago)\n` +
+    `7. ☕ Nongkrong & Hiburan: Rp 400.000 (Jago)\n` +
+    `8. 🍚 Uang Makan: Rp 1.200.000 (~Rp 50rb/hari)\n` +
+    `9. 🚬 Rokok & Vape: Rp 400.000 (Jago)\n\n` +
+    `_Ketik *budget* untuk pantau sisa kuota._`;
 
   try {
     await sendWhatsAppMessage(userNumber, message);
@@ -217,33 +216,29 @@ async function executeAllocationReminder22(userNumber, isManual = false) {
   const cycle = getPayCycleRange();
 
   const message =
-    `▤ *PENGINGAT ALOKASI GAJI (TANGGAL 22)*\n` +
-    `⏰ *Siklus:* ${cycle.label}\n\n` +
-    `Halo Bro! Gaji Rp 4.100.000 kemarin (Tgl 21) sudah masuk di rekening *BSI*.\n` +
-    `Hari ini saatnya eksekusi pembagian saldo ke *SeaBank* & *Bank Jago* agar tertata rapi dan zero-leak! ➔\n\n` +
+    `📋 *PENGINGAT ALOKASI GAJI (TANGGAL 22)*\n` +
+    `🗓️ *Siklus:* ${cycle.label}\n\n` +
+    `Gaji Rp 4.100.000 kemarin (Tgl 21) sudah masuk di rekening *BSI*.\n` +
+    `Hari ini saatnya memindahkan saldo ke *SeaBank* & *Bank Jago*:\n\n` +
     `═══════════════════════\n` +
-    `1 *LANGKAH 1: DARI BSI PINDAHKAN KE SEABANK*\n` +
-    `▣ *Total Transfer:* Rp 800.000\n` +
-    `• ◘ *Tabungan & Investasi:* Rp 300.000\n` +
-    `• ◘ *Dana Darurat:* Rp 500.000\n` +
-    `_(Biarkan mengendap di SeaBank agar berbunga harian 3.75-5% & terkunci aman)_\n\n` +
+    `*1. DARI BSI KE SEABANK (Total Rp 800.000)*\n` +
+    `• 📈 Tabungan & Investasi: Rp 300.000\n` +
+    `• 🛡️ Dana Darurat: Rp 500.000\n\n` +
     `═══════════════════════\n` +
-    `2 *LANGKAH 2: DARI BSI PINDAHKAN KE BANK JAGO*\n` +
-    `▣ *Total Transfer:* Rp 3.300.000\n` +
-    `_Masukkan ke Kantong-Kantong Jago:_\n` +
-    `• ◇ *Kantong Kirim Ortu:* Rp 400.000 ➔ _Langsung transfer ke orang tua (gratis BI-Fast)_\n` +
-    `• ▸ *Kantong Listrik, Air & Wifi:* Rp 400.000 ➔ _Langsung bayar tagihan bulanan_\n` +
-    `• ⌗ *Kantong Kuota & Internet:* Rp 100.000 ➔ _Langsung isi paket data_\n` +
-    `• ▤ *Kantong Belanja Sembako:* Rp 400.000 ➔ _Beras, telur, minyak, sabun/odol_\n` +
-    `• ☰ *Kantong Uang Makan:* Rp 1.200.000 ➔ _Jatah aman Rp 50.000/hari_\n` +
-    `• ◆ *Kantong Rokok & Vape:* Rp 400.000 ➔ _Jatah 1 bulan penuh_\n` +
-    `• ☕ *Kantong Nongkrong & Kopi:* Rp 400.000 ➔ _Jajan & refreshing akhir pekan_\n\n` +
+    `*2. DARI BSI KE BANK JAGO (Total Rp 3.300.000)*\n` +
+    `• 👨‍👩‍👦 Kirim Ortu: Rp 400.000\n` +
+    `• 💡 Listrik, Air & Wifi: Rp 400.000\n` +
+    `• 📶 Kuota & Internet: Rp 100.000\n` +
+    `• 🛒 Belanja Sembako: Rp 400.000\n` +
+    `• 🍚 Uang Makan: Rp 1.200.000 (~Rp 50rb/hari)\n` +
+    `• 🚬 Rokok & Vape: Rp 400.000\n` +
+    `• ☕ Nongkrong & Kopi: Rp 400.000\n\n` +
     `═══════════════════════\n` +
-    `3 *HASIL AKHIR:*\n` +
-    `• ⌂ *Saldo BSI:* Rp 0 (Aman, tidak tergesek belanja tanpa sadar)\n` +
-    `• ◇ *Kewajiban Ortu & Tagihan:* Sudah beres di awal siklus\n` +
-    `• ☰ *Uang Makan & Operasional:* Tertata rapi di kantong Jago masing-masing\n\n` +
-    `_Ketik \`budget\` untuk pantau sisa kuota belanja Anda._`;
+    `*Hasil Akhir:*\n` +
+    `• Saldo BSI: Rp 0 (aman dari godaan belanja)\n` +
+    `• Tagihan & ortu: langsung beres\n` +
+    `• Uang makan & operasional: rapi di kantong Jago\n\n` +
+    `_Ketik *budget* untuk pantau kuota._`;
 
   try {
     await sendWhatsAppMessage(userNumber, message);
@@ -291,15 +286,15 @@ async function executeBooster1(userNumber, isManual = false) {
   const cycle = getPayCycleRange();
 
   const message =
-    `▣ *DANA BOOSTER TELAH MASUK!*\n` +
-    `▣ *Nominal:* ${formatRupiah(500000)}\n` +
-    `⏰ *Fase:* Pelumas Operasional Tgl 1 s/d 20\n\n` +
-    `Bot telah otomatis mencatat pemasukan Rp 500.000 ke pembukuan.\n\n` +
-    `▤ *REKOMENDASI ALOKASI:*` +
-    `\n• ⛽ *Bensin & Transportasi:* Rp 200.000` +
-    `\n• ☰ *Tambahan Uang Makan:* Rp 300.000 (Melengkapi total makan jadi Rp 1.500.000 sebulan / Rp 50.000 per hari)\n\n` +
-    `⏳ *Sisa ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}!*\n` +
-    `_Ketik \`budget\` untuk melihat sisa kuota belanja Anda saat ini._`;
+    `🎉 *DANA BOOSTER MASUK!*\n` +
+    `• 💰 *Nominal:* ${formatRupiah(500000)}\n` +
+    `• 🗓️ *Fase:* Pelumas Operasional Tgl 1 s/d 20\n\n` +
+    `Pemasukan Rp 500.000 otomatis tercatat ke pembukuan.\n\n` +
+    `📋 *Rekomendasi Alokasi:*\n` +
+    `• ⛽ Bensin & Transportasi: Rp 200.000\n` +
+    `• 🍚 Tambahan Uang Makan: Rp 300.000\n\n` +
+    `⏳ Sisa ${cycle.daysRemaining} hari lagi menuju gajian ${cycle.nextPaydayFormatted}.\n` +
+    `_Ketik *budget* untuk melihat sisa kuota._`;
 
   try {
     await sendWhatsAppMessage(userNumber, message);
@@ -318,7 +313,7 @@ async function executeNightlyReminder(userNumber, isManual = false) {
   try {
     const ai = await generateNightlyInsight(userNumber, 'Bro');
     if (ai && ai.text) {
-      const badge = isManual ? '▸ _(Simulasi Pengingat Malam)_\n\n' : '';
+      const badge = isManual ? '_(Simulasi Pengingat Malam)_\n\n' : '';
       await sendWhatsAppMessage(userNumber, badge + ai.text);
       return { success: true, engine: ai.engine || 'ai' };
     }
@@ -346,16 +341,13 @@ async function executeNightlyReminder(userNumber, isManual = false) {
 
   if (todayExpenses.length === 0) {
     message =
-      `☾ *Halo Bro! Pengingat Malam (22:30)*\n\n` +
-      `Hari ini belum ada catatan pengeluaran sama sekali nih. ✔\n` +
-      `Apakah hari ini memang hemat atau ada jajan/bensin yang kelupaan dicatat?\n\n` +
-      `▸ *Tips Cepat:* Anda bisa mencatat banyak item sekaligus lho, contoh:\n` +
-      `• \`makan 25rb, es teh 5rb, parkir 2rb\`\n` +
-      `• \`bensin 50rb sama rokok 35rb di SPBU\`\n\n` +
-      `▮ *Status Kuota Makanan Siklus Ini:*\n` +
+      `🌙 *Pengingat Malam (22:30)*\n\n` +
+      `Hari ini belum ada catatan pengeluaran.\n` +
+      `Ada jajan atau belanja yang belum tercatat?\n\n` +
+      `📊 *Status Kuota Makanan:*\n` +
       `• Sisa Kuota: ${formatRupiah(foodStatus.remaining)}\n` +
-      `• Jatah Aman Esok Hari: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari lagi).\n\n` +
-      `_Selamat beristirahat! ☾_`;
+      `• Jatah Aman Besok: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari)\n\n` +
+      `_Selamat beristirahat! 💤_`;
   } else {
     let totalSpentToday = 0;
     const catMap = {};
@@ -371,16 +363,15 @@ async function executeNightlyReminder(userNumber, isManual = false) {
       .join('\n');
 
     message =
-      `☾ *Rekap Pengeluaran Hari Ini (22:30)*\n\n` +
-      `Hari ini Anda telah mencatat *${todayExpenses.length} pengeluaran*:\n` +
-      `▣ *Total Keluar Hari Ini:* ${formatRupiah(totalSpentToday)}\n\n` +
-      `▤ *Rincian Kategori:*\n` +
+      `🌙 *Rekap Pengeluaran Hari Ini (22:30)*\n\n` +
+      `Tercatat *${todayExpenses.length} pengeluaran*:\n` +
+      `• 💸 *Total Keluar:* ${formatRupiah(totalSpentToday)}\n\n` +
+      `*Rincian:*\n` +
       `${catLines}\n\n` +
       `═══════════════════════\n` +
-      `▸ *Info Esok Hari:*\n` +
-      `☰ Sisa kuota makanan: ${formatRupiah(foodStatus.remaining)}\n` +
-      `⏳ Jatah aman harian: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari menuju gajian ${cycle.nextPaydayFormatted}).\n\n` +
-      `_Selamat beristirahat! ☾_`;
+      `• 🍚 Sisa kuota makanan: ${formatRupiah(foodStatus.remaining)}\n` +
+      `• ⏳ Jatah aman harian: ${formatRupiah(foodStatus.dailyAllowance)}/hari (sisa ${cycle.daysRemaining} hari)\n\n` +
+      `_Selamat beristirahat! 💤_`;
   }
 
   try {
@@ -396,7 +387,7 @@ async function executeNightlyReminder(userNumber, isManual = false) {
  * Insight mingguan: AI menulis ringkasan tren + saran, template sebagai cadangan.
  */
 async function executeWeeklyInsight(userNumber, isManual = false) {
-  const badge = isManual ? '▸ _(Insight percobaan)_\n\n' : '';
+  const badge = isManual ? '_(Insight percobaan)_\n\n' : '';
 
   try {
     const ai = await generateWeeklyInsight(userNumber, 'Bro');
@@ -418,12 +409,12 @@ async function executeWeeklyInsight(userNumber, isManual = false) {
       .join('\n');
 
     const message =
-      `▮ *INSIGHT MINGGUAN*\n` +
-      `⏰ *Siklus:* ${data.periode_siklus} (sisa ${data.sisa_hari_ke_gajian} hari)\n\n` +
-      `▣ *Pengeluaran siklus ini:* ${formatRupiah(data.total_pengeluaran_siklus)}\n` +
-      `▾ *Siklus lalu:* ${formatRupiah(data.perbandingan_siklus_lalu.total_pengeluaran)}\n` +
-      (top ? `◆ *Paling boros:* ${top.kategori} ${formatRupiah(top.nominal)}\n` : '') +
-      (anomalies ? `\n⚠ *Kenaikan mencolok:*\n${anomalies}\n` : '') +
+      `📊 *INSIGHT MINGGUAN*\n` +
+      `🗓️ *Siklus:* ${data.periode_siklus} (sisa ${data.sisa_hari_ke_gajian} hari)\n\n` +
+      `• 💸 *Pengeluaran siklus ini:* ${formatRupiah(data.total_pengeluaran_siklus)}\n` +
+      `• 📉 *Siklus lalu:* ${formatRupiah(data.perbandingan_siklus_lalu.total_pengeluaran)}\n` +
+      (top ? `• ⚠️ *Paling boros:* ${top.kategori} (${formatRupiah(top.nominal)})\n` : '') +
+      (anomalies ? `\n⚠️ *Kenaikan mencolok:*\n${anomalies}\n` : '') +
       `\n_Ketik \`budget\` untuk rincian lengkap._`;
 
     await sendWhatsAppMessage(userNumber, badge + message);
@@ -503,9 +494,9 @@ function startRecurringScheduler() {
                   .join('\n');
 
                 const billAlert =
-                  `⚑ *PENGINGAT JATUH TEMPO TAGIHAN RUTIN!*\n\n` +
+                  `⏰ *PENGINGAT JATUH TEMPO TAGIHAN*\n\n` +
                   billLines +
-                  `\n\n▸ _Ketik \`bayar tagihan [nama]\` untuk otomatis mencatat pelunasan ke pengeluaran._`;
+                  `\n\n_Ketik \`bayar tagihan [nama]\` untuk mencatat pelunasan._`;
 
                 await sendWhatsAppMessage(userNumber, billAlert);
               }
