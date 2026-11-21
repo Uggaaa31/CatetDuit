@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 let sock = null;
+let reconnectTimer = null;
 let currentQR = null;
 let currentQRImage = null;
 let isConnected = false;
@@ -109,14 +110,35 @@ function isSenderAllowed(senderJid) {
   return getLidAliases().includes(cleanSender);
 }
 
+function scheduleReconnect(delay) {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectToWhatsApp();
+  }, delay);
+}
+
 async function connectToWhatsApp() {
+  // Hanya boleh ada satu socket. Dua socket berbagi creds yang sama -> ratchet
+  // Signal bercabang dan HP penerima menampilkan "Menunggu pesan ini".
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners();
+      sock.end(undefined);
+    } catch (err) {
+      console.error('Gagal menutup socket lama:', err.message);
+    }
+    sock = null;
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version, isLatest } = await fetchLatestBaileysVersion();
   console.log(`Menggunakan versi Baileys WA: v${version.join('.')} (Latest: ${isLatest})`);
 
-  sock = makeWASocket({
+  const socket = makeWASocket({
     version,
-    logger: pino({ level: 'silent' }),
+    // 'silent' menyembunyikan error dekripsi (Bad MAC) yang justru jadi biang masalah
+    logger: pino({ level: process.env.LOG_LEVEL || 'warn' }),
     printQRInTerminal: false,
     auth: state,
     browser: Browsers.ubuntu('Chrome'),
@@ -130,8 +152,10 @@ async function connectToWhatsApp() {
       return undefined;
     },
   });
+  sock = socket;
 
-  sock.ev.on('connection.update', async (update) => {
+  socket.ev.on('connection.update', async (update) => {
+    if (socket !== sock) return;
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -170,13 +194,13 @@ async function connectToWhatsApp() {
         } catch (cleanErr) {
           console.error('Gagal membersihkan auth_info:', cleanErr.message);
         }
-        setTimeout(connectToWhatsApp, 2000);
+        scheduleReconnect(2000);
       } else if (isRestartRequired) {
         console.log('WhatsApp memerlukan restart handshake (515). Menyambungkan segera...');
-        setTimeout(connectToWhatsApp, 500);
+        scheduleReconnect(500);
       } else {
         console.log('Mencoba menyambungkan kembali dalam 3 detik...');
-        setTimeout(connectToWhatsApp, 3000);
+        scheduleReconnect(3000);
       }
     } else if (connection === 'open') {
       isConnected = true;
@@ -187,10 +211,10 @@ async function connectToWhatsApp() {
     }
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  socket.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+  socket.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (socket !== sock || type !== 'notify') return;
 
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
@@ -238,7 +262,7 @@ async function connectToWhatsApp() {
               {},
               {
                 logger: pino({ level: 'silent' }),
-                reuploadRequest: sock.updateMediaMessage,
+                reuploadRequest: socket.updateMediaMessage,
               }
             );
 
